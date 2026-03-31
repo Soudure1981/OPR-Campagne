@@ -1,0 +1,2351 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OPR Campaign Manager v3</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Share+Tech+Mono&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&family=Orbitron:wght@400;600;800;900&family=Exo+2:wght@300;400;600&display=swap');
+:root{
+  --void:#000a00;--deep:#000d00;--panel:#001400;--panel2:#001a00;
+  --border:#0a3a0a;--border2:#0f5a0f;--glow:#00ff41;--accent:#39ff14;
+  --gold:#aaff00;--green:#00ff41;--red:#ff2200;--purple:#00ffaa;
+  --text:#b8ffb8;--text2:#7acc7a;--text3:#3a6a3a;
+  --scan:rgba(0,255,65,.03);
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Share Tech Mono',monospace;background:var(--void);color:var(--text);height:100vh;overflow:hidden;}
+
+/* CRT scanline overlay */
+body::after{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,var(--scan) 2px,var(--scan) 4px);
+  animation:scan 8s linear infinite;}
+@keyframes scan{0%{background-position:0 0}100%{background-position:0 100vh}}
+
+/* Phosphor flicker */
+@keyframes flicker{0%,100%{opacity:1}92%{opacity:.97}94%{opacity:.92}96%{opacity:.98}}
+#app,#lobby{animation:flicker 6s infinite;}
+
+#stars{position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+  radial-gradient(1px 1px at 7% 14%,rgba(0,255,65,.4) 0%,transparent 100%),
+  radial-gradient(1px 1px at 23% 54%,rgba(0,255,65,.3) 0%,transparent 100%),
+  radial-gradient(1px 1px at 44% 7%,rgba(0,255,65,.35) 0%,transparent 100%),
+  radial-gradient(1px 1px at 63% 37%,rgba(0,255,65,.3) 0%,transparent 100%),
+  radial-gradient(1px 1px at 81% 71%,rgba(0,255,65,.35) 0%,transparent 100%),
+  radial-gradient(2px 2px at 34% 71%,rgba(0,255,65,.2) 0%,transparent 100%),
+  radial-gradient(2px 2px at 71% 17%,rgba(0,255,65,.15) 0%,transparent 100%),
+  var(--void);}
+#app{position:relative;z-index:1;display:flex;flex-direction:column;height:100vh;}
+
+/* ── HEADER ── */
+header{display:flex;align-items:center;justify-content:space-between;padding:7px 16px;
+  background:var(--deep);border-bottom:1px solid var(--border2);
+  box-shadow:0 0 20px rgba(0,255,65,.15);flex-shrink:0;}
+.logo{font-family:'VT323',monospace;font-size:1.4rem;color:var(--glow);
+  text-shadow:0 0 10px var(--glow),0 0 30px rgba(0,255,65,.4);letter-spacing:3px;}
+.logo span{color:var(--accent);}
+.hdr-center{display:flex;align-items:center;gap:10px;}
+.turn-box{background:var(--panel);border:1px solid var(--border2);padding:5px 13px;border-radius:2px;display:flex;align-items:center;gap:10px;
+  box-shadow:inset 0 0 10px rgba(0,255,65,.05);}
+.tlbl{font-family:'Share Tech Mono';font-size:.6rem;color:var(--text3);letter-spacing:2px;}
+.tnum{font-family:'VT323';font-size:1.6rem;color:var(--gold);line-height:1;text-shadow:0 0 8px var(--gold);}
+.hdr-right{display:flex;align-items:center;gap:7px;}
+#fb-st{padding:4px 9px;font-family:'Share Tech Mono';font-size:.58rem;letter-spacing:1px;display:flex;align-items:center;gap:5px;}
+.fbd{width:6px;height:6px;border-radius:50%;background:var(--red);}
+.fbd.on{background:var(--green);box-shadow:0 0 5px var(--green);}
+
+/* ── MAIN LAYOUT ── */
+#main{display:flex;flex:1;overflow:hidden;}
+#sidebar{width:260px;min-width:260px;background:var(--deep);border-right:1px solid var(--border2);display:flex;flex-direction:column;overflow:hidden;}
+.stabs{display:flex;border-bottom:1px solid var(--border2);flex-shrink:0;}
+.stab{flex:1;padding:8px 2px;font-family:'Share Tech Mono';font-size:.6rem;font-weight:400;letter-spacing:.8px;text-transform:uppercase;background:none;border:none;color:var(--text3);cursor:pointer;transition:all .2s;border-bottom:2px solid transparent;}
+.stab:hover{color:var(--text);}
+.stab.active{color:var(--glow);border-bottom-color:var(--glow);background:rgba(0,255,65,.04);text-shadow:0 0 6px var(--glow);}
+.tcontent{display:none;flex:1;overflow-y:auto;padding:9px;flex-direction:column;gap:7px;}
+.tcontent.active{display:flex;}
+::-webkit-scrollbar{width:3px;}
+::-webkit-scrollbar-track{background:var(--void);}
+::-webkit-scrollbar-thumb{background:var(--border2);}
+
+/* ── MAP AREA ── */
+#map-area{flex:1;position:relative;overflow:hidden;background:var(--void);}
+#map-canvas{display:block;width:100%;height:100%;cursor:crosshair;}
+#map-canvas.grab-mode{cursor:grab;}
+#map-canvas.grab-mode:active{cursor:grabbing;}
+#map-canvas.move-mode{cursor:crosshair;}
+
+/* ── SYSTEM VIEW ── */
+#sys-view{position:absolute;inset:0;background:var(--void);display:none;z-index:10;}
+#sys-view.open{display:block;}
+#sys-canvas{display:block;width:100%;height:100%;cursor:crosshair;}
+#sys-canvas.grab-mode{cursor:grab;}
+#sys-canvas.drag-mode{cursor:move;}
+#sys-canvas.conn-mode{cursor:cell;}
+#sys-canvas.move-mode{cursor:crosshair;}
+
+/* ── PLANET DETAIL ── */
+.pd-ov{display:none;position:absolute;inset:0;z-index:30;background:rgba(0,8,0,.88);backdrop-filter:blur(3px);align-items:center;justify-content:center;}
+.pd-ov.open{display:flex;}
+.pd-box{background:var(--panel);border:1px solid var(--border2);border-radius:2px;width:380px;max-width:94%;overflow:hidden;
+  box-shadow:0 0 30px rgba(0,255,65,.2),inset 0 0 30px rgba(0,255,65,.03);animation:svin .2s ease;}
+.pd-vis{height:170px;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.pd-body{padding:14px;}
+.pd-title{font-family:'VT323';font-size:1.3rem;color:var(--glow);margin-bottom:2px;text-shadow:0 0 8px var(--glow);}
+.pd-sub{font-size:.68rem;color:var(--text3);margin-bottom:10px;}
+.pd-acts{display:flex;gap:7px;margin-top:12px;flex-wrap:wrap;}
+
+/* ── MOVE BANNER ── */
+.mv-ban{position:absolute;top:10px;left:50%;transform:translateX(-50%);
+  background:rgba(0,50,0,.95);border:1px solid var(--glow);padding:7px 18px;border-radius:2px;display:none;
+  font-family:'Share Tech Mono';font-size:.68rem;font-weight:400;letter-spacing:2px;
+  z-index:25;animation:blink 1.5s infinite;pointer-events:none;color:var(--glow);
+  text-shadow:0 0 8px var(--glow);}
+.mv-ban.on{display:block;}
+.mpill{position:absolute;top:10px;right:12px;z-index:8;}
+.pill{font-family:'Share Tech Mono';font-size:.58rem;letter-spacing:1px;padding:4px 9px;border-radius:2px;
+  background:rgba(0,10,0,.8);border:1px solid var(--border2);color:var(--text3);}
+.pill.adm{border-color:var(--gold);color:var(--gold);text-shadow:0 0 5px var(--gold);}
+.pill.ply{border-color:var(--glow);color:var(--glow);text-shadow:0 0 5px var(--glow);}
+.tt{position:absolute;background:rgba(0,15,0,.97);border:1px solid var(--border2);padding:7px 11px;border-radius:2px;
+  pointer-events:none;font-size:.68rem;z-index:50;box-shadow:0 0 15px rgba(0,255,65,.2);max-width:185px;display:none;
+  font-family:'Share Tech Mono';}
+.map-ctrls{position:absolute;bottom:12px;right:12px;display:flex;flex-direction:column;gap:5px;pointer-events:auto;}
+.bc-item{color:var(--text3);cursor:pointer;padding:4px 9px;border:1px solid var(--border2);border-radius:2px;transition:all .2s;
+  background:rgba(0,10,0,.85);font-family:'Share Tech Mono';font-size:.62rem;}
+.bc-item:hover{color:var(--glow);border-color:var(--glow);text-shadow:0 0 6px var(--glow);}
+.bc-item.active{color:var(--text2);cursor:default;border-color:transparent;}
+
+/* ── SIDEBAR WIDGETS ── */
+.pc{background:var(--panel);border:1px solid var(--border2);border-radius:2px;padding:9px;}
+.pch{display:flex;align-items:center;gap:7px;margin-bottom:7px;}
+.pdot{width:10px;height:10px;border-radius:50%;flex-shrink:0;box-shadow:0 0 6px currentColor;}
+.pn{font-family:'Share Tech Mono';font-size:.7rem;font-weight:400;flex:1;letter-spacing:1px;}
+.sr{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;}
+.sb{background:var(--deep);border:1px solid var(--border);border-radius:2px;padding:4px;text-align:center;}
+.sv2{font-family:'VT323';font-size:1.1rem;}
+.sl{font-size:.55rem;color:var(--text3);letter-spacing:.6px;text-transform:uppercase;font-family:'Share Tech Mono';}
+.fr{display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--deep);border:1px solid var(--border);border-radius:2px;cursor:pointer;transition:all .2s;font-size:.7rem;font-family:'Share Tech Mono';}
+.fr:hover{border-color:var(--border2);background:var(--panel);}
+.fr.sel{border-color:var(--glow);background:rgba(0,255,65,.05);}
+.sdot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.s-orbit{background:var(--green);box-shadow:0 0 5px var(--green);}
+.s-moving{background:var(--gold);box-shadow:0 0 5px var(--gold);animation:blink 1s infinite;}
+.s-battle{background:var(--red);box-shadow:0 0 5px var(--red);animation:blink .5s infinite;}
+.ab{background:var(--panel);border:1px solid var(--border2);border-radius:2px;padding:9px;}
+.ah{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
+.an{font-family:'Share Tech Mono';font-size:.68rem;font-weight:400;flex:1;}
+.ap2{font-family:'Share Tech Mono';font-size:.72rem;color:var(--gold);}
+.au{font-size:.68rem;color:var(--text2);line-height:1.55;white-space:pre-wrap;font-family:'Share Tech Mono';}
+.le{padding:6px 8px;background:var(--deep);border-left:2px solid var(--border2);border-radius:0 2px 2px 0;margin-bottom:4px;font-size:.68rem;font-family:'Share Tech Mono';}
+.le.v{border-left-color:var(--green);}
+.lt{font-family:'Share Tech Mono';color:var(--text3);font-size:.58rem;margin-bottom:1px;}
+.sec{font-family:'Share Tech Mono';font-size:.6rem;font-weight:400;letter-spacing:2px;color:var(--text3);text-transform:uppercase;padding-bottom:4px;border-bottom:1px solid var(--border);margin-bottom:6px;}
+
+/* ── BUTTONS ── */
+.btn{font-family:'Share Tech Mono';font-size:.62rem;font-weight:400;letter-spacing:1.5px;text-transform:uppercase;
+  padding:6px 11px;border-radius:2px;border:1px solid;cursor:pointer;transition:all .2s;white-space:nowrap;background:none;}
+.btn-p{border-color:var(--glow);color:var(--glow);}
+.btn-p:hover{background:rgba(0,255,65,.12);box-shadow:0 0 10px rgba(0,255,65,.3);text-shadow:0 0 6px var(--glow);}
+.btn-a{border-color:var(--accent);color:var(--accent);}
+.btn-a:hover{background:rgba(57,255,20,.1);}
+.btn-d{border-color:var(--red);color:var(--red);}
+.btn-d:hover{background:rgba(255,34,0,.15);}
+.btn-g{border-color:var(--gold);color:var(--gold);}
+.btn-g:hover{background:rgba(170,255,0,.1);}
+.btn-pu{border-color:var(--purple);color:var(--purple);}
+.btn-pu:hover{background:rgba(0,255,170,.1);}
+.btn-sm{padding:4px 8px;font-size:.58rem;}
+.btn-ic{width:30px;height:30px;padding:0;display:flex;align-items:center;justify-content:center;font-size:.8rem;}
+.btn.active-mode{background:rgba(0,255,65,.15);box-shadow:0 0 8px rgba(0,255,65,.4);}
+
+/* ── MODALS ── */
+.mov{display:none;position:fixed;inset:0;z-index:100;background:rgba(0,5,0,.9);backdrop-filter:blur(3px);align-items:center;justify-content:center;}
+.mov.open{display:flex;}
+.modal{background:var(--panel);border:1px solid var(--border2);border-radius:2px;padding:20px;min-width:310px;max-width:520px;width:92%;
+  box-shadow:0 0 40px rgba(0,255,65,.15),inset 0 0 40px rgba(0,255,65,.02);animation:svin .22s ease;max-height:90vh;overflow-y:auto;}
+.mt2{font-family:'VT323';font-size:1.2rem;color:var(--glow);margin-bottom:13px;letter-spacing:2px;text-shadow:0 0 8px var(--glow);}
+.ma{display:flex;gap:7px;justify-content:flex-end;margin-top:13px;}
+.fg{margin-bottom:10px;}
+.fl{display:block;font-size:.6rem;color:var(--text3);font-family:'Share Tech Mono';letter-spacing:2px;text-transform:uppercase;margin-bottom:3px;}
+.fi,.fs,.fta{width:100%;background:var(--deep);border:1px solid var(--border2);border-radius:2px;padding:7px 9px;
+  color:var(--text);font-family:'Share Tech Mono';font-size:.78rem;outline:none;transition:border-color .2s;}
+.fi:focus,.fs:focus,.fta:focus{border-color:var(--glow);box-shadow:0 0 8px rgba(0,255,65,.2);}
+.fs option{background:var(--panel);}
+.fta{min-height:70px;resize:vertical;}
+.bgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:3px;}
+.bo{padding:7px 3px;background:var(--deep);border:1px solid var(--border);border-radius:2px;cursor:pointer;transition:all .15s;text-align:center;}
+.bo:hover{border-color:var(--border2);}
+.bo.sel{border-color:var(--glow);background:rgba(0,255,65,.08);}
+.bo-e{font-size:.82rem;}
+.bo-l{font-size:.52rem;color:var(--text3);margin-top:1px;font-family:'Share Tech Mono';}
+
+/* ── MISSION GENERATOR ── */
+#mission-panel{position:absolute;inset:0;background:rgba(0,5,0,.98);display:none;z-index:40;flex-direction:column;overflow-y:auto;}
+#mission-panel.open{display:flex;}
+.mg-header{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border2);flex-shrink:0;background:var(--deep);}
+.mg-title{font-family:'VT323';font-size:1.4rem;color:var(--purple);letter-spacing:2px;text-shadow:0 0 10px var(--purple);}
+.mg-body{padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:14px;flex:1;}
+.mg-card{background:var(--panel);border:1px solid var(--border2);border-radius:2px;padding:14px;}
+.mg-card-title{font-family:'Share Tech Mono';font-size:.62rem;color:var(--text3);text-transform:uppercase;letter-spacing:2px;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+.mg-result{font-size:.8rem;color:var(--text);line-height:1.7;font-family:'Share Tech Mono';}
+.mg-result strong{color:var(--glow);font-family:'Share Tech Mono';font-size:.78rem;}
+.mg-result .tag{display:inline-block;padding:2px 8px;border-radius:2px;font-family:'Share Tech Mono';font-size:.65rem;margin:2px 3px 2px 0;}
+.tag-mission{background:rgba(0,255,65,.1);border:1px solid rgba(0,255,65,.3);color:var(--glow);}
+.tag-deploy{background:rgba(57,255,20,.08);border:1px solid rgba(57,255,20,.3);color:var(--accent);}
+.tag-battle{background:rgba(170,255,0,.08);border:1px solid rgba(170,255,0,.3);color:var(--gold);}
+.tag-weather{background:rgba(0,255,65,.08);border:1px solid rgba(0,255,65,.25);color:var(--green);}
+.tag-event{background:rgba(0,255,170,.08);border:1px solid rgba(0,255,170,.3);color:var(--purple);}
+.tag-side{background:rgba(255,34,0,.08);border:1px solid rgba(255,34,0,.3);color:var(--red);}
+.mg-full{grid-column:1/-1;}
+.mg-btn-row{display:flex;gap:8px;flex-wrap:wrap;}
+
+@keyframes svin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+@keyframes spin{to{transform:rotate(360deg)}}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%) translateY(60px);
+  background:var(--panel);border:1px solid var(--glow);padding:8px 16px;border-radius:2px;
+  font-family:'Share Tech Mono';font-size:.7rem;transition:transform .3s;z-index:200;
+  box-shadow:0 0 20px rgba(0,255,65,.3);color:var(--glow);}
+#toast.on{transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+<div id="stars"></div>
+
+<!-- ═══════════ LOBBY ═══════════ -->
+<div id="lobby" style="position:fixed;inset:0;z-index:500;background:var(--void);display:flex;align-items:center;justify-content:center;flex-direction:column;">
+  <div style="text-align:center;margin-bottom:28px;">
+    <div style="font-family:'Orbitron';font-size:2rem;font-weight:900;color:var(--glow);text-shadow:0 0 30px rgba(0,212,255,.6);letter-spacing:4px">OPR <span style="color:var(--accent)">CAMPAIGN</span></div>
+    <div style="font-family:'Share Tech Mono';font-size:.65rem;color:var(--text3);letter-spacing:3px;margin-top:6px">GESTIONNAIRE DE CAMPAGNE — GRIMDARK FUTURE</div>
+  </div>
+
+  <div style="background:var(--panel);border:1px solid var(--border2);border-radius:12px;width:420px;max-width:95vw;box-shadow:0 0 60px rgba(0,212,255,.12);overflow:hidden;">
+
+    <!-- ÉTAPE 1 : Config Firebase -->
+    <div id="lob-step1" style="padding:24px;">
+      <div style="font-family:'Orbitron';font-size:.65rem;color:var(--text3);letter-spacing:2px;margin-bottom:16px;text-align:center">ÉTAPE 1 — CONNEXION FIREBASE</div>
+      <div class="fg"><label class="fl">API KEY</label><input class="fi" id="lob-ak" placeholder="AIzaSy..."></div>
+      <div class="fg"><label class="fl">AUTH DOMAIN</label><input class="fi" id="lob-ad" placeholder="projet.firebaseapp.com"></div>
+      <div class="fg"><label class="fl">DATABASE URL</label><input class="fi" id="lob-du" placeholder="https://xxxx-default-rtdb.europe-west1.firebasedatabase.app"></div>
+      <div class="fg"><label class="fl">PROJECT ID</label><input class="fi" id="lob-pi" placeholder="mon-projet"></div>
+      <div id="lob-fb-err2" style="display:none;font-size:.7rem;color:var(--red);margin-bottom:8px"></div>
+      <button id="lob-connect-btn" class="btn btn-p" style="width:100%;padding:10px;justify-content:center" onclick="lobConnectFB()">⚡ CONNECTER À FIREBASE</button>
+      <div style="text-align:center;margin-top:10px;font-size:.6rem;color:var(--text3);font-family:'Share Tech Mono'">
+        console.firebase.google.com → Realtime Database → Paramètres du projet
+      </div>
+    </div>
+
+    <!-- ÉTAPE 2 : Liste des campagnes -->
+    <div id="lob-step2" style="display:none;padding:24px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div style="font-family:'Orbitron';font-size:.65rem;color:var(--glow);letter-spacing:2px">CAMPAGNES</div>
+        <div style="font-family:'Share Tech Mono';font-size:.58rem;color:var(--green);display:flex;align-items:center;gap:4px">
+          <span style="width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green);display:inline-block"></span>FIREBASE CONNECTÉ
+        </div>
+      </div>
+
+      <!-- Liste -->
+      <div id="lob-list" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;margin-bottom:14px;"></div>
+
+      <!-- Rejoindre avec mot de passe -->
+      <div id="lob-join-box" style="display:none;background:var(--deep);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:14px;">
+        <div style="font-family:'Orbitron';font-size:.7rem;color:var(--text);margin-bottom:8px" id="lob-join-name"></div>
+        <div style="display:flex;gap:6px;">
+          <input id="lob-join-pwd" type="password" class="fi" placeholder="Mot de passe..." style="flex:1" onkeydown="if(event.key==='Enter')lobJoin()">
+          <button class="btn btn-p btn-sm" onclick="lobJoin()">ENTRER</button>
+          <button class="btn btn-sm" style="border-color:var(--border);color:var(--text3)" onclick="lobCancelJoin()">✕</button>
+        </div>
+        <div id="lob-join-err" style="display:none;font-size:.65rem;color:var(--red);margin-top:5px"></div>
+      </div>
+
+      <!-- Section admin -->
+      <div style="border-top:1px solid var(--border);padding-top:14px;">
+        <div id="lob-admin-locked">
+          <div style="font-size:.68rem;color:var(--text3);margin-bottom:8px;text-align:center">Accès admin pour créer/supprimer des campagnes</div>
+          <div style="display:flex;gap:6px;">
+            <input id="lob-admin-pwd" type="password" class="fi" placeholder="Mot de passe admin..." style="flex:1;font-size:.72rem" onkeydown="if(event.key==='Enter')lobAdminLogin()">
+            <button class="btn btn-a btn-sm" onclick="lobAdminLogin()">ADMIN</button>
+          </div>
+          <div id="lob-admin-err" style="display:none;font-size:.65rem;color:var(--red);margin-top:5px"></div>
+        </div>
+        <div id="lob-admin-form" style="display:none;">
+          <div style="font-family:'Share Tech Mono';font-size:.6rem;color:var(--green);margin-bottom:10px;">✅ Mode admin — Nouvelle campagne</div>
+          <div class="fg"><label class="fl">NOM</label><input class="fi" id="lob-new-name" placeholder="Conquête du Secteur Sirius..." onkeydown="if(event.key==='Enter')document.getElementById('lob-new-pwd').focus()"></div>
+          <div class="fg"><label class="fl">MOT DE PASSE (optionnel)</label><input class="fi" id="lob-new-pwd" type="password" placeholder="Laisser vide = accès libre" onkeydown="if(event.key==='Enter')lobCreate()"></div>
+          <button class="btn btn-p btn-sm" style="width:100%;padding:8px" onclick="lobCreate()">✦ CRÉER LA CAMPAGNE</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Firebase error -->
+    <div id="lob-fb-err" style="display:none;padding:24px;text-align:center;color:var(--red);font-size:.75rem"></div>
+  </div>
+
+  <div style="margin-top:16px;font-family:'Share Tech Mono';font-size:.58rem;color:var(--text3)">OPR Campaign Manager v3 — Grimdark Future</div>
+</div>
+
+<div id="app">
+<!-- HEADER -->
+<header>
+  <div class="logo">OPR <span>CAMPAIGN</span> <span style="font-size:.55rem;color:var(--text3);letter-spacing:1px">v3</span></div>
+  <div class="hdr-center">
+    <div class="turn-box" onclick="editTurn()" style="cursor:pointer;title='Cliquer pour modifier le tour'" title="Admin: cliquer pour modifier">
+      <div><div class="tlbl">TOUR</div>
+      <div class="tnum" id="turn-num">1</div></div>
+    </div>
+    <button class="btn btn-a btn-sm" onclick="nextTurn()">TOUR ▶</button>
+  </div>
+  <div class="hdr-right">
+    <div id="fb-st"><div class="fbd" id="fbd"></div><span id="fbl">LOCAL</span></div>
+    <button class="btn btn-pu btn-sm" onclick="openMissionGen()">🎲 MISSION</button>
+    <button class="btn btn-p btn-sm" onclick="openFBStatus()">⚡ FIREBASE</button>
+    <button class="btn btn-sm" style="border-color:var(--border2);color:var(--text2)" onclick="openM('m-session')">👤 SESSION</button>
+  </div>
+</header>
+
+<div id="main">
+<!-- SIDEBAR -->
+<div id="sidebar">
+  <div class="stabs">
+    <button class="stab active" onclick="stab('s-players')">JOUEURS</button>
+    <button class="stab" onclick="stab('s-fleets')">FLOTTES</button>
+    <button class="stab" onclick="stab('s-armies')">ARMÉES</button>
+    <button class="stab" onclick="stab('s-log')">LOG</button>
+  </div>
+  <div class="tcontent active" id="s-players"><div id="players-list"></div><button class="btn btn-p btn-sm" onclick="openM('m-add-player')">+ JOUEUR</button></div>
+  <div class="tcontent" id="s-fleets"><div id="fleets-list"></div><button class="btn btn-p btn-sm" onclick="openM('m-add-fleet')">+ FLOTTE</button></div>
+  <div class="tcontent" id="s-armies">
+    <div id="armies-list"></div>
+    <div style="display:flex;gap:5px;flex-shrink:0">
+      <button class="btn btn-p btn-sm" style="flex:1" onclick="openM('m-add-army')">+ MANUEL</button>
+      <button class="btn btn-a btn-sm" style="flex:1" onclick="_pendingArmy=null;openM('m-add-army');armyTab('txt')">📄 IMPORT</button>
+    </div>
+  </div>
+  <div class="tcontent" id="s-log"><div class="sec">HISTORIQUE</div><div id="battle-log"></div></div>
+</div>
+
+<!-- MAP AREA -->
+<div id="map-area">
+  <!-- GALAXY LAYER -->
+  <canvas id="map-canvas"></canvas>
+
+  <!-- GALAXY UI (only visible when sys-view is closed) -->
+  <div id="gal-ui" style="position:absolute;inset:0;pointer-events:none;z-index:5;">
+    <div style="pointer-events:auto;position:absolute;top:10px;left:12px;">
+      <div id="breadcrumb" style="display:flex;align-items:center;gap:7px;font-family:'Share Tech Mono';font-size:.68rem;">
+        <span class="bc-item active" id="bc-galaxy-lbl" style="cursor:default">🌌 GALAXIE</span>
+      </div>
+    </div>
+    <div class="mv-ban" id="gal-mv-ban">🚀 CLIQUEZ UN SYSTÈME ADJACENT</div>
+    <div class="tt" id="gal-tt"></div>
+    <div class="map-ctrls">
+      <button class="btn btn-p btn-ic btn-sm" onclick="zoomGal(1.2)" title="Zoom +">＋</button>
+      <button class="btn btn-p btn-ic btn-sm" onclick="zoomGal(.8)" title="Zoom -">－</button>
+      <button class="btn btn-ic btn-sm" style="border-color:var(--border2);color:var(--text2)" onclick="resetGal()" title="Reset">⌂</button>
+      <button class="btn btn-ic btn-sm" style="border-color:var(--purple);color:var(--purple)" onclick="addNebula()" title="Ajouter nébuleuse mystérieuse">🌌</button>
+      <button class="btn btn-ic btn-sm" style="border-color:var(--border2);color:var(--text2)" onclick="openMapEd()" title="Éditer carte">✏️</button>
+    </div>
+  </div>
+
+  <!-- SYSTEM VIEW (completely covers galaxy) -->
+  <div id="sys-view">
+    <canvas id="sys-canvas"></canvas>
+
+    <!-- SYS UI (only visible inside sys-view) -->
+    <div style="position:absolute;inset:0;pointer-events:none;z-index:20;">
+      <!-- Back breadcrumb -->
+      <div style="pointer-events:auto;position:absolute;top:10px;left:12px;display:flex;align-items:center;gap:8px;font-family:'Share Tech Mono';font-size:.68rem;">
+        <span class="bc-item" onclick="goGalaxy()" title="Retour carte galactique">← 🌌 GALAXIE</span>
+        <span style="color:var(--text3)">›</span>
+        <span class="bc-item active" id="bc-sys-name" style="color:var(--glow)">—</span>
+      </div>
+      <!-- Move banner -->
+      <div class="mv-ban" id="sv-mv-ban">🚀 CLIQUEZ UNE DESTINATION</div>
+      <!-- Tooltip -->
+      <div class="tt" id="sys-tt"></div>
+      <!-- Controls -->
+      <div style="pointer-events:auto;position:absolute;bottom:12px;right:12px;display:flex;flex-direction:column;gap:5px;">
+        <button class="btn btn-p btn-ic btn-sm" onclick="zoomSys(1.2)" title="Zoom +">＋</button>
+        <button class="btn btn-p btn-ic btn-sm" onclick="zoomSys(.8)" title="Zoom -">－</button>
+        <button class="btn btn-ic btn-sm" style="border-color:var(--border2);color:var(--text2)" onclick="resetSys()" title="Reset vue">⌂</button>
+        <button class="btn btn-ic btn-sm" id="btn-drag-mode" style="border-color:var(--gold);color:var(--gold)" onclick="toggleDragMode()" title="Déplacer planètes (drag)">✥</button>
+        <button class="btn btn-ic btn-sm" id="btn-conn-mode" style="border-color:var(--purple);color:var(--purple)" onclick="toggleConnMode()" title="Éditer connexions">⇄</button>
+        <button class="btn btn-ic btn-sm" style="border-color:var(--green);color:var(--green)" onclick="addPlanetRandom()" title="Ajouter planète aléatoire">🪐</button>
+        <button class="btn btn-ic btn-sm" style="border-color:var(--border2);color:var(--text2)" onclick="openEditSys()" title="Éditer système">✏️</button>
+      </div>
+    </div>
+
+    <!-- Planet detail overlay (inside sys-view) -->
+    <div class="pd-ov" id="pd-ov">
+      <div class="pd-box">
+        <div class="pd-vis" id="pd-vis"></div>
+        <div class="pd-body">
+          <div class="pd-title" id="pd-name"></div>
+          <div class="pd-sub" id="pd-sub"></div>
+          <div id="pd-owner" style="display:flex;align-items:center;gap:6px;margin-bottom:9px;"></div>
+          <div id="pd-res" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;"></div>
+          <div id="pd-fleets" style="margin-bottom:9px;"></div>
+          <div class="pd-acts" id="pd-acts"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MISSION GENERATOR (covers everything in map-area) -->
+  <div id="mission-panel">
+    <div class="mg-header">
+      <button class="btn btn-sm" style="border-color:var(--border2);color:var(--text2)" onclick="closeMissionGen()">← RETOUR</button>
+      <div class="mg-title">🎲 GÉNÉRATEUR DE MISSION</div>
+      <div style="flex:1"></div>
+      <div class="mg-btn-row">
+        <button class="btn btn-pu btn-sm" onclick="generateMission()">🎲 GÉNÉRER</button>
+        <button class="btn btn-g btn-sm" onclick="generateMission(true)">🪐 AVEC PLANÈTE</button>
+      </div>
+    </div>
+    <div class="mg-body" id="mg-body">
+      <div class="mg-card mg-full" style="text-align:center;padding:40px;">
+        <div style="font-size:2rem;margin-bottom:12px">🎲</div>
+        <div style="font-family:'Orbitron';font-size:.8rem;color:var(--text3)">Cliquez GÉNÉRER pour créer une mission aléatoire<br>ou AVEC PLANÈTE pour tenir compte du biome de la dernière planète visitée</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SESSION PILL (always on top) -->
+  <div class="mpill"><div class="pill" id="mpill">SPECTATEUR</div></div>
+</div>
+</div>
+</div>
+
+<!-- MODALS -->
+<div class="mov" id="m-firebase"><div class="modal">
+  <div class="mt2">⚡ FIREBASE</div>
+  <div id="fb-status-detail" style="font-size:.8rem;color:var(--text2);margin-bottom:16px;line-height:1.8"></div>
+  <div class="ma">
+    <button class="btn btn-sm" style="border-color:var(--border);color:var(--text3)" onclick="closeM('m-firebase')">FERMER</button>
+    <button class="btn btn-d btn-sm" onclick="lobbyDisconnect()">↩ CHANGER DE CAMPAGNE</button>
+  </div>
+</div></div>
+
+<div class="mov" id="m-session"><div class="modal">
+  <div class="mt2">👤 SESSION</div>
+  <div class="fg"><label class="fl">MODE</label><select class="fs" id="ses-mode" onchange="toggleAdminPwd(this.value)"><option value="admin">Admin</option><option value="player">Joueur</option></select></div>
+  <div class="fg" id="ses-pwd-row" style="display:none"><label class="fl">MOT DE PASSE ADMIN</label><input class="fi" id="ses-pwd" type="password" placeholder="Laisser vide pour désactiver"></div>
+  <div class="fg"><label class="fl">JOUEUR ACTIF</label><select class="fs" id="ses-player"><option value="">— Spectateur —</option></select></div>
+  <div id="ses-error" style="font-size:.72rem;color:var(--red);display:none;margin-bottom:8px">❌ Mot de passe incorrect</div>
+  <div class="ma"><button class="btn btn-sm" style="border-color:var(--border);color:var(--text3)" onclick="closeM('m-session')">ANNULER</button><button class="btn btn-p btn-sm" onclick="setSession()">OK</button></div>
+</div></div>
+
+<div class="mov" id="m-add-player"><div class="modal">
+  <div class="mt2">+ JOUEUR</div>
+  <div class="fg"><label class="fl">NOM / FACTION</label><input class="fi" id="np-name" placeholder="Empire Terran..."></div>
+  <div class="fg"><label class="fl">COULEUR</label><input type="color" class="fi" id="np-color" value="#00d4ff" style="height:36px;cursor:pointer"></div>
+  <div class="ma"><button class="btn btn-sm" style="border-color:var(--border);color:var(--text3)" onclick="closeM('m-add-player')">ANNULER</button><button class="btn btn-p btn-sm" onclick="addPlayer()">AJOUTER</button></div>
+</div></div>
+
+<div class="mov" id="m-add-fleet"><div class="modal">
+  <div class="mt2">+ FLOTTE</div>
+  <div class="fg"><label class="fl">NOM</label><input class="fi" id="nf-name" placeholder="Flotte Alpha..."></div>
+  <div class="fg"><label class="fl">JOUEUR</label><select class="fs" id="nf-player"></select></div>
+  <div class="fg"><label class="fl">SYSTÈME DE DÉPART</label><select class="fs" id="nf-sys"></select></div>
+  <div class="fg"><label class="fl">PLANÈTE DE DÉPART</label><select class="fs" id="nf-planet"><option value="">Station (orbite)</option></select></div>
+  <div class="ma"><button class="btn btn-sm" style="border-color:var(--border);color:var(--text3)" onclick="closeM('m-add-fleet')">ANNULER</button><button class="btn btn-p btn-sm" onclick="addFleet()">DÉPLOYER</button></div>
+</div></div>
+
+<div class="mov" id="m-add-army"><div class="modal" style="max-width:600px;max-height:88vh;overflow-y:auto;">
+  <div class="mt2">+ LISTE D'ARMÉE</div>
+  <!-- Import tabs -->
+  <div style="display:flex;gap:0;margin-bottom:14px;border:1px solid var(--border);border-radius:4px;overflow:hidden;">
+    <button class="army-tab active" id="at-manual" onclick="armyTab('manual')" style="flex:1;padding:7px;font-family:'Orbitron';font-size:.55rem;font-weight:600;letter-spacing:1px;background:rgba(0,212,255,.1);border:none;color:var(--glow);cursor:pointer">✍️ MANUEL</button>
+    <button class="army-tab" id="at-txt" onclick="armyTab('txt')" style="flex:1;padding:7px;font-family:'Orbitron';font-size:.55rem;font-weight:600;letter-spacing:1px;background:none;border:none;color:var(--text3);cursor:pointer;border-left:1px solid var(--border)">📄 IMPORT .TXT</button>
+  </div>
+  <!-- Manual tab -->
+  <div id="army-tab-manual">
+    <div class="fg"><label class="fl">NOM</label><input class="fi" id="na-name" placeholder="Force d'assaut..."></div>
+    <div class="fg"><label class="fl">JOUEUR</label><select class="fs" id="na-player"></select></div>
+    <div class="fg"><label class="fl">POINTS</label><input class="fi" id="na-pts" type="number" placeholder="2000"></div>
+    <div class="fg"><label class="fl">UNITÉS (une par ligne)</label><textarea class="fta" id="na-units" placeholder="2x Infanterie [150pts]&#10;1x Char MkIV [320pts]" style="min-height:100px"></textarea></div>
+    <div class="fg"><label class="fl">NOTES</label><textarea class="fta" id="na-notes" placeholder="Tactiques..."></textarea></div>
+  </div>
+  <!-- TXT import tab -->
+  <div id="army-tab-txt" style="display:none">
+    <div class="fg"><label class="fl">JOUEUR</label><select class="fs" id="na-player-txt"></select></div>
+    <div class="fg"><label class="fl">COLLER LE TEXTE ARMY FORGE (.txt)</label>
+      <textarea class="fta" id="na-txt-content" style="min-height:160px;font-family:'Share Tech Mono';font-size:.62rem" placeholder="Coller ici le contenu du fichier .txt exporté depuis Army Forge..."></textarea>
+    </div>
+    <div id="na-txt-preview" style="display:none;background:var(--deep);border:1px solid var(--border);border-radius:4px;padding:10px;margin-top:8px;font-size:.72rem;"></div>
+    <button class="btn btn-p btn-sm" style="margin-top:8px" onclick="previewTxtArmy()">👁️ PRÉVISUALISER</button>
+  </div>
+  <div class="ma" style="margin-top:14px">
+    <button class="btn btn-sm" style="border-color:var(--border);color:var(--text3)" onclick="closeM('m-add-army')">ANNULER</button>
+    <button class="btn btn-p btn-sm" onclick="addArmy()">SAUVEGARDER</button>
+  </div>
+</div></div>
+
+<!-- Army detail viewer -->
+<div class="mov" id="m-view-army"><div class="modal" style="max-width:640px;max-height:88vh;overflow-y:auto;">
+  <div class="mt2" id="varm-title">LISTE D'ARMÉE</div>
+  <div id="varm-body"></div>
+  <div class="ma"><button class="btn btn-p btn-sm" onclick="closeM('m-view-army')">FERMER</button></div>
+</div></div>
+
+<div class="mov" id="m-battle"><div class="modal">
+  <div class="mt2">⚔️ BATAILLE</div>
+  <div class="fg"><label class="fl">LIEU</label><input class="fi" id="btl-loc"></div>
+  <div class="fg"><label class="fl">VAINQUEUR</label><select class="fs" id="btl-win"></select></div>
+  <div class="fg"><label class="fl">PERDANT</label><select class="fs" id="btl-los"></select></div>
+  <div class="fg"><label class="fl">RÉSULTAT</label><select class="fs" id="btl-res"><option value="none">Aucun</option><option value="capture">Planète capturée</option><option value="system">Système contrôlé</option></select></div>
+  <div class="fg"><label class="fl">NOTES</label><textarea class="fta" id="btl-notes"></textarea></div>
+  <div class="ma"><button class="btn btn-sm" style="border-color:var(--border);color:var(--text3)" onclick="closeM('m-battle')">ANNULER</button><button class="btn btn-a btn-sm" onclick="saveBattle()">ENREGISTRER</button></div>
+</div></div>
+
+<div class="mov" id="m-edit-planet"><div class="modal" style="max-width:450px">
+  <div class="mt2">✏️ ÉDITER PLANÈTE</div>
+  <input type="hidden" id="ep-sid"><input type="hidden" id="ep-pid">
+  <div style="display:grid;grid-template-columns:1fr 140px;gap:14px;align-items:start">
+    <div>
+      <div class="fg"><label class="fl">NOM</label><input class="fi" id="ep-name"></div>
+      <div class="fg"><label class="fl">BIOME</label><div class="bgrid" id="bgrid"></div></div>
+      <div class="fg"><label class="fl">PROPRIÉTAIRE</label><select class="fs" id="ep-owner"><option value="">Neutre</option></select></div>
+      <div class="fg"><label class="fl">RESSOURCES (virgule)</label><input class="fi" id="ep-res" placeholder="Minerais +2, Énergie +1"></div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+      <div style="font-family:'Share Tech Mono';font-size:.58rem;color:var(--text3);letter-spacing:2px;text-transform:uppercase;margin-bottom:2px">APERÇU</div>
+      <div id="ep-preview" style="width:110px;height:110px;border-radius:50%;overflow:hidden;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;background:var(--deep)"></div>
+      <div class="fg" style="width:100%;margin-bottom:0">
+        <label class="fl">SKIN CUSTOM</label>
+        <input type="file" accept="image/*" id="ep-img" style="color:var(--text2);font-size:.65rem;width:100%" onchange="previewSkin(this)">
+      </div>
+      <button class="btn btn-d btn-sm" onclick="removeSkin()" style="font-size:.55rem">✕ Retirer skin</button>
+    </div>
+  </div>
+  <div class="ma"><button class="btn btn-sm" style="border-color:var(--border);color:var(--text3)" onclick="closeM('m-edit-planet')">ANNULER</button><button class="btn btn-p btn-sm" onclick="savePlanetEdit()">SAUVEGARDER</button></div>
+</div></div>
+
+<div class="mov" id="m-edit-sys"><div class="modal">
+  <div class="mt2">✏️ SYSTÈME</div>
+  <input type="hidden" id="es-id">
+  <div class="fg"><label class="fl">NOM SYSTÈME</label><input class="fi" id="es-name" onkeydown="if(event.key==='Enter')saveSysEdit()"></div>
+  <div class="ma"><button class="btn btn-sm" style="border-color:var(--border);color:var(--text3)" onclick="closeM('m-edit-sys')">ANNULER</button><button class="btn btn-p btn-sm" onclick="saveSysEdit()">OK</button></div>
+</div></div>
+
+<div class="mov" id="m-map-json"><div class="modal" style="max-width:490px">
+  <div class="mt2">✏️ CARTE JSON</div>
+  <div class="fg"><textarea class="fta" id="map-json" style="min-height:190px;font-family:'Share Tech Mono';font-size:.65rem"></textarea></div>
+  <div class="ma"><button class="btn btn-sm" style="border-color:var(--border);color:var(--text3)" onclick="closeM('m-map-json')">ANNULER</button><button class="btn btn-p btn-sm" onclick="applyJson()">APPLIQUER</button></div>
+</div></div>
+
+<div id="toast"></div>
+
+<script type="module">
+// ════════════════════════════════════════════════════
+// BIOMES
+// ════════════════════════════════════════════════════
+const BIOMES={
+  desert:{label:'Désert',e:'🏜️',c:['#c8832a','#e8a84a','#a06020','#f0c060'],a:'rgba(200,130,40,.15)',
+    weather:['Tempête de sable','Canicule extrême','Vent de poussière','Nuit glaciale','Soleil brûlant','Mirages']},
+  ice:{label:'Arctique',e:'🧊',c:['#a0c8e8','#d0eeff','#7090b0','#e8f8ff'],a:'rgba(160,200,240,.2)',
+    weather:['Blizzard','Tempête de neige','Brouillard glacial','Gel intense','Aurores boréales','Pluie verglaçante']},
+  ocean:{label:'Océanique',e:'🌊',c:['#1a4a8a','#2a70cc','#0a2850','#3090ee'],a:'rgba(30,100,200,.2)',
+    weather:['Tempête tropicale','Pluie torrentielle','Brouillard côtier','Mer calme','Cyclone','Marée haute']},
+  forge:{label:'Forge',e:'🏭',c:['#3a2a1a','#6a3a1a','#1a1208','#8a4a20'],a:'rgba(180,80,20,.2)',
+    weather:['Pluie acide','Nuages toxiques','Éruptions industrielles','Smog dense','Vents chargés','Chaleur des forges']},
+  jungle:{label:'Jungle',e:'🌿',c:['#1a4a1a','#2a7a2a','#0a2808','#3a9a30'],a:'rgba(30,140,30,.2)',
+    weather:['Pluie tropicale','Chaleur humide','Brouillard dense','Orage violent','Spores toxiques','Sécheresse']},
+  dead:{label:'Irradié',e:'☠️',c:['#2a2a2a','#4a4a4a','#1a1a1a','#3a5a3a'],a:'rgba(80,160,40,.15)',
+    weather:['Pluie radioactive','Vent corrosif','Tempête de cendres','Anomalie psychique','Calme inquiétant','Tempête électrique']},
+  volcanic:{label:'Volcanique',e:'🌋',c:['#2a0808','#6a1a0a','#c83a0a','#1a0404'],a:'rgba(200,60,10,.25)',
+    weather:['Pluie de cendres','Éruption proche','Gaz sulfureux','Tremblement de terre','Coulée de lave','Explosion volcanique']},
+  gas:{label:'Gazeuse',e:'⛽',c:['#6a3a8a','#8a5aaa','#4a1a6a','#aa70cc'],a:'rgba(140,80,200,.2)',
+    weather:['Vortex de gaz','Tempête électrique','Pression extrême','Calme stratosphérique','Éclairs géants','Nuages toxiques']},
+  agricole:{label:'Agricole',e:'🌾',c:['#5a7a20','#8aaa30','#3a5a10','#b0d050'],a:'rgba(100,160,30,.2)',
+    weather:['Pluie douce','Chaleur fertile','Sécheresse','Grêle dévastatrice','Brouillard matinal','Tempête de poussière']},
+};
+
+// ════════════════════════════════════════════════════
+// OPR MISSION DATA (from rulebook)
+// ════════════════════════════════════════════════════
+const OPR={
+  missions:[
+    {id:'duel',name:'Duel',desc:'D3+2 marqueurs. Contrôler le plus de marqueurs après 4 tours.',vp:'1 VP par marqueur'},
+    {id:'seize',name:'Seize Ground',desc:'4 marqueurs dans les 4 quarts de table. Contrôler le plus de marqueurs.',vp:'1 VP par marqueur'},
+    {id:'relic',name:'Relic Hunt',desc:'3 marqueurs. Les saisir les retire du terrain — l\'unité les porte. Si détruite, le marqueur est lâché.',vp:'1 VP par marqueur'},
+    {id:'sabotage',name:'Sabotage',desc:'1 marqueur chacun à 12" de sa table. Détruire celui de l\'ennemi tout en protégeant le sien.',vp:'1 VP destruction + 1 VP survie'},
+    {id:'breakthrough',name:'Breakthrough',desc:'1 marqueur par camp au centre de chaque zone de déploiement.',vp:'1 VP par marqueur'},
+    {id:'hill',name:'King of the Hill',desc:'1 marqueur central à 9" des zones et des bords. Contrôler LE marqueur gagne la partie.',vp:'2 VP pour le contrôle'},
+  ],
+  deployments:[
+    {id:'frontline',name:'Frontline',desc:'Zones de 12" sur chaque bord long. Standard.'},
+    {id:'longhaul',name:'Long Haul',desc:'Zones de 24" sur chaque bord court. Longue traversée.'},
+    {id:'sidebattle',name:'Side Battle',desc:'Zones diagonales. Ligne de 24" en diagonale.'},
+    {id:'encircled',name:'Encircled',desc:'Zones triangulaires sur 2 coins opposés. 36" × 24".'},
+    {id:'spearhead',name:'Spearhead',desc:'Zones triangulaires sur les côtés, 24" entre elles.'},
+    {id:'flank',name:'Flank Assault',desc:'Zones en L sur 2 coins adjacents.'},
+  ],
+  battleConditions:[
+    {type:'Géologique',list:[
+      {name:'Earthquake',desc:'Tout le terrain devient Dangereux. Les terrains déjà Dangereux causent 2 blessures sur 1.',icon:'🌍'},
+      {name:'Heavy Storm',desc:'Tout le terrain donne Couverture. Les terrains Couverture donnent +2 en Défense.',icon:'⛈️'},
+      {name:'Muddy Terrain',desc:'Tout le terrain devient Difficile. Les terrains Difficiles limitent le mouvement à 4".',icon:'🌊'},
+      {name:'Smell of Death',desc:'Toutes les unités reçoivent -1 aux tests de moral.',icon:'💀'},
+      {name:'Zero Gravity',desc:'Les unités doivent bouger +D3" en ligne droite (Advance) ou +2D6" (Rush/Charge).',icon:'🚀'},
+      {name:'Dark Skies',desc:'Lancez 2D6 avant la bataille — toutes les portées sont réduites de ce résultat (minimum 3").',icon:'🌑'},
+    ]},
+    {type:'Mystérieux',list:[
+      {name:'Damnation',desc:'Chaque round, sacrifiez 1 unité (D3 blessures) ou toutes vos unités ont -1 à tout.',icon:'😈'},
+      {name:'Arcane Power',desc:'Les lanceurs ont +1 aux jets de sort. Sur un 1 naturel, le lanceur prend D3 blessures.',icon:'✨'},
+      {name:'Inspiration',desc:'Toutes les unités ont +1 aux tests de moral.',icon:'🌟'},
+      {name:'Deadly Vortex',desc:'À chaque activation, lancez 1 dé : sur 1, l\'unité prend D3 blessures automatiques.',icon:'🌀'},
+      {name:'Mystical Fog',desc:'Quand une unité prend une blessure, lancez 1 dé — sur 6+ ignorez-la.',icon:'🌫️'},
+      {name:'Sinister Echoes',desc:'Les unités Ébranlées prennent D3 blessures. Déroute en mêlée → unités amies à 6" prennent D3 blessures.',icon:'👻'},
+    ]},
+  ],
+  randomEvents:[
+    {name:'Monstrous Spawn',desc:'1 unité aléatoire : D3+3 touches auto AP(1).',icon:'👾'},
+    {name:'Low Supplies',desc:'D3 unités aléatoires ne peuvent plus tirer jusqu\'à la fin.',icon:'📦'},
+    {name:'Broken Morale',desc:'1 armée aléatoire : -1 aux tests de moral jusqu\'à la fin.',icon:'💔'},
+    {name:'Toxic Fumes',desc:'1 quart de table aléatoire : toutes les unités dedans prennent D3+4 touches auto.',icon:'☠️'},
+    {name:'Psychic Anomaly',desc:'Marqueur au centre d\'un quart. Toute unité à 3" prend D3+3 touches.',icon:'🌀'},
+    {name:'The Walking Dead',desc:'D6+4 Zombies (Qua 5+, Def 5+, Griffes A3, Slow) apparaissent et chargent l\'unité la plus proche.',icon:'🧟'},
+    {name:'Crazed Sniper',desc:'Un sniper se place sur le terrain le plus haut. D3 touches à l\'unité ciblée chaque tour.',icon:'🎯'},
+    {name:'Suppressing Fire',desc:'1 unité aléatoire double ses attaques de tir ce round.',icon:'💥'},
+    {name:'War Shout',desc:'1 unité Ébranlée aléatoire cesse immédiatement d\'être Ébranlée.',icon:'📣'},
+    {name:'Berserker',desc:'Premier 6 en mêlée ce tour : la cible prend D3 blessures auto.',icon:'⚔️'},
+    {name:'Flash Grenades',desc:'1 armée aléatoire : les ennemis ont -1 en mêlée contre elle jusqu\'à la fin du round.',icon:'💡'},
+    {name:'Grave Miscalculation',desc:'Premier 1 au tir ce round : l\'unité prend D3+3 touches auto AP(2).',icon:'💣'},
+  ],
+  sideMissions:{
+    combat:[
+      {name:'Conserve',desc:'Au moins 50% des unités amies en vie.'},
+      {name:'Linebreaker',desc:'Tous les ennemis sans Robuste éliminés.'},
+      {name:'Obliterate',desc:'Détruire 3+ unités ennemies en 1 round.'},
+      {name:'Terrify',desc:'1 unité ennemie déroute en mêlée.'},
+      {name:'Onslaught',desc:'Gagner une mêlée de 3+ blessures.'},
+      {name:'Attrition',desc:'Au moins 50% des unités ennemies éliminées.'},
+    ],
+    tactical:[
+      {name:'Dominate',desc:'Les ennemis ne contrôlent aucun objectif.'},
+      {name:'Ground War',desc:'Aucune unité ennemie à 6" du centre.'},
+      {name:'Overrun',desc:'Au moins 1 unité amie dans chaque quart de table.'},
+      {name:'Defend',desc:'Aucune unité ennemie dans votre zone de déploiement.'},
+      {name:'Invade',desc:'Au moins 1 unité amie (3+ figurines) dans la zone ennemie.'},
+      {name:'Seize',desc:'Contrôler le plus d\'objectifs.'},
+    ],
+    heroic:[
+      {name:'Slay',desc:'Héros ennemi avec la plus haute valeur Robuste éliminé.'},
+      {name:'Sacrifice',desc:'Votre héros le plus cher éliminé.'},
+      {name:'Head Hunter',desc:'Héros ennemi le plus cher éliminé.'},
+      {name:'Sorcerer Supreme',desc:'Héros ennemi éliminé par un sort.'},
+      {name:'Ancient Heirlooms',desc:'Héros ami à 6" du centre de la table.'},
+      {name:'Secret Mission',desc:'Héros ami à 3" du bord ennemi dans sa zone.'},
+    ],
+  },
+};
+
+// ════════════════════════════════════════════════════
+// PLANET SVG
+// ════════════════════════════════════════════════════
+function pSVG(p,sz=120){
+  if(p.customImage)return`<img src="${p.customImage}" style="width:${sz}px;height:${sz}px;object-fit:cover;border-radius:50%;box-shadow:0 0 ${sz*.15}px rgba(0,0,0,.6)">`;
+  const b=BIOMES[p.biome]||BIOMES.dead,[c1,c2,c3,c4]=b.c,r=sz/2,id=`${p.id}${sz}`.replace(/[^a-z0-9]/gi,'_');
+  let det='';
+  if(p.biome==='desert')det=`
+    <ellipse cx="${r*.35}" cy="${r*.65}" rx="${r*.55}" ry="${r*.18}" fill="${c2}" opacity=".5"/>
+    <ellipse cx="${r*1.25}" cy="${r*.45}" rx="${r*.38}" ry="${r*.14}" fill="${c4}" opacity=".4"/>
+    <ellipse cx="${r*.8}" cy="${r*1.1}" rx="${r*.3}" ry="${r*.1}" fill="${c2}" opacity=".35"/>`;
+  else if(p.biome==='ice')det=`
+    <polygon points="${r*.45},${r*.25} ${r*.75},${r*.65} ${r*.15},${r*.65}" fill="white" opacity=".35"/>
+    <polygon points="${r*1.1},${r*.45} ${r*1.35},${r*.9} ${r*.85},${r*.9}" fill="white" opacity=".25"/>
+    <line x1="${r*.1}" y1="${r*.75}" x2="${r*1.6}" y2="${r*.55}" stroke="white" stroke-width="${sz*.018}" opacity=".2"/>
+    <line x1="${r*.3}" y1="${r*1.1}" x2="${r*1.4}" y2="${r*.3}" stroke="rgba(200,230,255,.3)" stroke-width="${sz*.01}"/>`;
+  else if(p.biome==='ocean')det=`
+    <ellipse cx="${r*.65}" cy="${r*.55}" rx="${r*.32}" ry="${r*.2}" fill="${c2}" opacity=".55"/>
+    <ellipse cx="${r*1.25}" cy="${r*.95}" rx="${r*.25}" ry="${r*.15}" fill="${c2}" opacity=".45"/>
+    <ellipse cx="${r*.4}" cy="${r*.85}" rx="${r*.18}" ry="${r*.1}" fill="${c2}" opacity=".35"/>
+    <path d="M${r*.1},${r*.85} Q${r*.5},${r*.65} ${r*.9},${r*.85}" stroke="rgba(100,200,255,.35)" stroke-width="${sz*.018}" fill="none"/>`;
+  else if(p.biome==='forge')det=`
+    <ellipse cx="${r*.5}" cy="${r*1.12}" rx="${r*.32}" ry="${r*.09}" fill="#ff6020" opacity=".75"/>
+    <ellipse cx="${r*1.1}" cy="${r*.72}" rx="${r*.2}" ry="${r*.07}" fill="#ff4010" opacity=".6"/>
+    <rect x="${r*.38}" y="${r*.28}" width="${sz*.045}" height="${sz*.14}" fill="#ff8030" opacity=".55"/>
+    <rect x="${r*.88}" y="${r*.48}" width="${sz*.04}" height="${sz*.11}" fill="#ff6020" opacity=".5"/>
+    <circle cx="${r*.5}" cy="${r*1.12}" r="${r*.06}" fill="#ffaa00" opacity=".8"/>`;
+  else if(p.biome==='jungle')det=`
+    <ellipse cx="${r*.48}" cy="${r*.78}" rx="${r*.42}" ry="${r*.22}" fill="${c2}" opacity=".6"/>
+    <ellipse cx="${r*1.12}" cy="${r*.58}" rx="${r*.28}" ry="${r*.18}" fill="${c2}" opacity=".5"/>
+    <circle cx="${r*.68}" cy="${r*.38}" r="${r*.14}" fill="${c2}" opacity=".4"/>
+    <circle cx="${r*.32}" cy="${r*.52}" r="${r*.1}" fill="${c4}" opacity=".35"/>`;
+  else if(p.biome==='dead')det=`
+    <circle cx="${r*.38}" cy="${r*.48}" r="${r*.18}" fill="${c3}" opacity=".65"/>
+    <circle cx="${r*1.02}" cy="${r*.7}" r="${r*.13}" fill="${c3}" opacity=".55"/>
+    <circle cx="${r*.7}" cy="${r*1.08}" r="${r*.09}" fill="#405040" opacity=".5"/>
+    <circle cx="${r*1.2}" cy="${r*.38}" r="${r*.14}" fill="${c3}" opacity=".45"/>`;
+  else if(p.biome==='volcanic')det=`
+    <path d="M${r*.58},${r*.48} L${r*.48},${r*.12} L${r*.68},${r*.12} Z" fill="#ff4000" opacity=".8"/>
+    <path d="M${r*1.02},${r*.68} L${r*.92},${r*.36} L${r*1.12},${r*.36} Z" fill="#ff6020" opacity=".7"/>
+    <ellipse cx="${r*.58}" cy="${r*.52}" rx="${r*.35}" ry="${r*.11}" fill="#ff2000" opacity=".55"/>
+    <ellipse cx="${r*.7}" cy="${r*1.0}" rx="${r*.2}" ry="${r*.06}" fill="#ff5500" opacity=".5"/>`;
+  else if(p.biome==='gas')det=`
+    <ellipse cx="${r}" cy="${r*.52}" rx="${r*1.15}" ry="${r*.24}" fill="${c2}" opacity=".3"/>
+    <ellipse cx="${r}" cy="${r}" rx="${r*1.18}" ry="${r*.19}" fill="${c4}" opacity=".24"/>
+    <ellipse cx="${r}" cy="${r*1.38}" rx="${r*1.05}" ry="${r*.16}" fill="${c2}" opacity=".22"/>
+    <ellipse cx="${r}" cy="${r*.75}" rx="${r*1.1}" ry="${r*.12}" fill="rgba(255,255,255,.08)"/>`;
+  else if(p.biome==='agricole')det=`
+    <ellipse cx="${r*.5}" cy="${r*.7}" rx="${r*.45}" ry="${r*.2}" fill="${c4}" opacity=".55"/>
+    <ellipse cx="${r*1.1}" cy="${r*.5}" rx="${r*.3}" ry="${r*.15}" fill="${c2}" opacity=".45"/>
+    <rect x="${r*.2}" y="${r*.45}" width="${sz*.08}" height="${sz*.2}" fill="${c2}" opacity=".35"/>
+    <rect x="${r*.55}" y="${r*.35}" width="${sz*.08}" height="${sz*.25}" fill="${c4}" opacity=".4"/>
+    <rect x="${r*.9}" y="${r*.4}" width="${sz*.08}" height="${sz*.22}" fill="${c2}" opacity=".35"/>
+    <ellipse cx="${r*.5}" cy="${r*1.1}" rx="${r*.35}" ry="${r*.08}" fill="${c3}" opacity=".4"/>`;
+  return`<svg xmlns="http://www.w3.org/2000/svg" width="${sz}" height="${sz}" viewBox="0 0 ${sz} ${sz}">
+    <defs>
+      <radialGradient id="g${id}" cx="35%" cy="30%">
+        <stop offset="0%" stop-color="${c2}"/><stop offset="55%" stop-color="${c1}"/><stop offset="100%" stop-color="${c3}"/>
+      </radialGradient>
+      <radialGradient id="a${id}" cx="50%" cy="50%">
+        <stop offset="65%" stop-color="transparent"/><stop offset="100%" stop-color="${b.a}"/>
+      </radialGradient>
+      <radialGradient id="hi${id}" cx="35%" cy="30%">
+        <stop offset="0%" stop-color="rgba(255,255,255,.18)"/><stop offset="60%" stop-color="transparent"/>
+      </radialGradient>
+      <clipPath id="c${id}"><circle cx="${r}" cy="${r}" r="${r-1}"/></clipPath>
+      <filter id="sh${id}"><feDropShadow dx="0" dy="0" stdDeviation="${r*.12}" flood-color="${c1}" flood-opacity=".5"/></filter>
+    </defs>
+    <circle cx="${r}" cy="${r}" r="${r+1}" fill="${c3}" opacity=".15" filter="url(#sh${id})"/>
+    <circle cx="${r}" cy="${r}" r="${r-1}" fill="url(#g${id})"/>
+    <g clip-path="url(#c${id})">${det}</g>
+    <circle cx="${r}" cy="${r}" r="${r-1}" fill="url(#a${id})"/>
+    <circle cx="${r}" cy="${r}" r="${r-1}" fill="url(#hi${id})"/>
+  </svg>`;
+}
+
+// Planet SVG as data URI for canvas rendering
+const _planetImgCache={};
+function getPlanetImg(p,sz,cb){
+  const key=`${p.id}_${p.biome}_${p.customImage?'ci':'sv'}_${sz}`;
+  if(_planetImgCache[key]){cb(_planetImgCache[key]);return;}
+  const svgStr=pSVG(p,sz);
+  if(p.customImage){
+    const img=new Image();
+    img.onload=()=>{_planetImgCache[key]=img;cb(img);if(curSysId)drawSys();};
+    img.src=p.customImage;return;
+  }
+  const blob=new Blob([svgStr],{type:'image/svg+xml'});
+  const url=URL.createObjectURL(blob);
+  const img=new Image();
+  img.onload=()=>{_planetImgCache[key]=img;URL.revokeObjectURL(url);cb(img);if(curSysId)drawSys();};
+  img.onerror=()=>{URL.revokeObjectURL(url);};
+  img.src=url;
+}
+
+// ════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════
+let S={turn:1,players:[],fleets:[],armies:[],systems:[],log:[],session:{mode:'admin',playerId:null},adminPassword:''};
+let selFleet=null,galMoveMode=false,sysMoveMode=false;
+let sysDragMode=false,sysConnMode=false; // new edit modes
+let sysDragPlanet=null,sysConnFirst=null; // drag target / first planet for connection
+let curSysId=null,curPlanetId=null;
+let missionPlanetBiome=null;
+
+// ════════════════════════════════════════════════════
+// DEFAULT MAP DATA
+// ════════════════════════════════════════════════════
+const defSys=[
+  {id:'s1',name:'Solaris Prime',x:.5,y:.14,connections:['s2','s3'],
+   planets:[
+     {id:'p1',name:'Solaris I',biome:'desert',owner:null,resources:['Énergie +3'],pos:{x:.3,y:.4}},
+     {id:'p2',name:'Solaris II',biome:'volcanic',owner:null,resources:['Minerais +2'],pos:{x:.65,y:.55}},
+   ],
+   planetConnections:[['p1','p2']],
+  },
+  {id:'s2',name:'Vega Nexus',x:.2,y:.37,connections:['s1','s4','s5'],
+   planets:[{id:'p3',name:'Vega Prime',biome:'ocean',owner:null,resources:['Bio +2','Eau +3'],pos:{x:.5,y:.68}}],
+   planetConnections:[],
+  },
+  {id:'s3',name:'Keth Station',x:.78,y:.34,connections:['s1','s6'],
+   planets:[
+     {id:'p4',name:'Keth Alpha',biome:'dead',owner:null,resources:['Fer +3'],pos:{x:.3,y:.35}},
+     {id:'p5',name:'Keth Beta',biome:'forge',owner:null,resources:['Carburant +2'],pos:{x:.6,y:.6}},
+   ],
+   planetConnections:[['p4','p5']],
+  },
+  {id:'s4',name:'Nebula Reach',x:.11,y:.6,connections:['s2','s7'],
+   planets:[{id:'p6',name:'Nebula I',biome:'gas',owner:null,resources:['Artefacts +4'],pos:{x:.35,y:.65}}],
+   planetConnections:[],
+  },
+  {id:'s5',name:'Centaurus Hub',x:.38,y:.55,connections:['s2','s3','s7','s8'],
+   planets:[
+     {id:'p7',name:'Centaurus A',biome:'jungle',owner:null,resources:['Bio +1','Minerais +1'],pos:{x:.28,y:.38}},
+     {id:'p8',name:'Centaurus B',biome:'ice',owner:null,resources:['Énergie +2'],pos:{x:.65,y:.42}},
+     {id:'p9',name:'Centaurus C',biome:'desert',owner:null,resources:['Minerais +3'],pos:{x:.48,y:.68}},
+   ],
+   planetConnections:[['p7','p8'],['p8','p9'],['p7','p9']],
+  },
+  {id:'s6',name:'Ryzan Expanse',x:.87,y:.57,connections:['s3','s8'],
+   planets:[{id:'p10',name:'Ryzan I',biome:'dead',owner:null,resources:['Carburant +3'],pos:{x:.65,y:.65}}],
+   planetConnections:[],
+  },
+  {id:'s7',name:'Abyss Gate',x:.24,y:.81,connections:['s4','s5','s8'],
+   planets:[{id:'p11',name:'Abyss Prime',biome:'volcanic',owner:null,resources:['Énergie +5'],pos:{x:.5,y:.72}}],
+   planetConnections:[],
+  },
+  {id:'s8',name:'Terra Nova',x:.62,y:.82,connections:['s5','s6','s7'],
+   planets:[
+     {id:'p12',name:'Terra Nova I',biome:'jungle',owner:null,resources:['Bio +3','Eau +2'],pos:{x:.32,y:.42}},
+     {id:'p13',name:'Terra Nova II',biome:'ocean',owner:null,resources:['Artefacts +2'],pos:{x:.68,y:.58}},
+   ],
+   planetConnections:[['p12','p13']],
+  },
+];
+
+// ════════════════════════════════════════════════════
+// GALAXY CANVAS
+// ════════════════════════════════════════════════════
+const galCv=document.getElementById('map-canvas'),galCtx=galCv.getContext('2d');
+let galTf={x:0,y:0,sc:1},galDrag=false,galDs={x:0,y:0};
+
+function resizeGal(){const a=document.getElementById('map-area');galCv.width=a.clientWidth;galCv.height=a.clientHeight;drawGal();}
+const g2s=(wx,wy)=>({x:wx*galCv.width*galTf.sc+galTf.x,y:wy*galCv.height*galTf.sc+galTf.y});
+function hx(h){return{r:parseInt(h.slice(1,3),16),g:parseInt(h.slice(3,5),16),b:parseInt(h.slice(5,7),16)};}
+function pc(pid){const p=S.players.find(p=>p.id===pid);return p?p.color:'#4a6a8a';}
+
+function drawGal(){
+  galCtx.clearRect(0,0,galCv.width,galCv.height);
+
+  // Draw nebulae (mysterious zones)
+  (S.nebulae||[]).forEach(n=>{
+    const pos=g2s(n.x,n.y),r=n.r*Math.min(galCv.width,galCv.height)*galTf.sc;
+    const g=galCtx.createRadialGradient(pos.x,pos.y,0,pos.x,pos.y,r);
+    g.addColorStop(0,'rgba(0,255,170,.18)');
+    g.addColorStop(.5,'rgba(0,255,170,.08)');
+    g.addColorStop(1,'transparent');
+    galCtx.fillStyle=g;galCtx.beginPath();galCtx.arc(pos.x,pos.y,r,0,Math.PI*2);galCtx.fill();
+    // Animated border
+    galCtx.beginPath();galCtx.arc(pos.x,pos.y,r,0,Math.PI*2);
+    galCtx.strokeStyle='rgba(0,255,170,.3)';galCtx.lineWidth=1;galCtx.setLineDash([4,6]);galCtx.stroke();galCtx.setLineDash([]);
+    // Label
+    galCtx.font=`${Math.max(7,9*galTf.sc)}px 'Share Tech Mono',monospace`;
+    galCtx.fillStyle='rgba(0,255,170,.7)';galCtx.textAlign='center';galCtx.textBaseline='middle';
+    galCtx.fillText('? '+n.name,pos.x,pos.y);
+    // Delete button (admin)
+    if(isAdmin()){
+      galCtx.font=`${Math.max(6,8*galTf.sc)}px 'Share Tech Mono',monospace`;
+      galCtx.fillStyle='rgba(255,34,0,.5)';
+      galCtx.fillText('[X]',pos.x,pos.y+r*.7);
+    }
+  });
+
+  // Hyperspace routes
+  S.systems.forEach(s=>s.connections.forEach(cid=>{
+    const t=S.systems.find(x=>x.id===cid);if(!t)return;
+    const a=g2s(s.x,s.y),b=g2s(t.x,t.y);
+    galCtx.beginPath();galCtx.moveTo(a.x,a.y);galCtx.lineTo(b.x,b.y);
+    galCtx.strokeStyle='rgba(0,100,0,.5)';galCtx.lineWidth=1;galCtx.setLineDash([4,5]);galCtx.stroke();galCtx.setLineDash([]);
+  }));
+  S.systems.forEach(s=>{
+    const pos=g2s(s.x,s.y),r=24*galTf.sc;
+    const fl=S.fleets.filter(f=>f.systemId===s.id);
+    const owMap={};s.planets.forEach(p=>{if(p.owner)owMap[p.owner]=(owMap[p.owner]||0)+1;});
+    const dom=Object.entries(owMap).sort((a,b)=>b[1]-a[1])[0]?.[0]||null;
+    const oc=dom?pc(dom):'#1e3a5f';
+    if(dom){const rgb=hx(oc),g=galCtx.createRadialGradient(pos.x,pos.y,r*.4,pos.x,pos.y,r*2.8);
+      g.addColorStop(0,`rgba(${rgb.r},${rgb.g},${rgb.b},.28)`);g.addColorStop(1,'transparent');
+      galCtx.fillStyle=g;galCtx.beginPath();galCtx.arc(pos.x,pos.y,r*2.8,0,Math.PI*2);galCtx.fill();}
+    if(galMoveMode&&selFleet){const cs=S.systems.find(x=>x.id===selFleet.systemId);
+      if(cs&&cs.connections.includes(s.id)){galCtx.beginPath();galCtx.arc(pos.x,pos.y,r+8,0,Math.PI*2);
+        galCtx.strokeStyle='rgba(255,107,53,.7)';galCtx.lineWidth=2;galCtx.setLineDash([3,3]);galCtx.stroke();galCtx.setLineDash([]);}}
+    galCtx.beginPath();galCtx.arc(pos.x,pos.y,r,0,Math.PI*2);
+    const bg=galCtx.createRadialGradient(pos.x-r*.3,pos.y-r*.3,0,pos.x,pos.y,r);
+    bg.addColorStop(0,dom?oc+'44':'#001400');bg.addColorStop(1,'rgba(0,5,0,.95)');
+    galCtx.fillStyle=bg;galCtx.fill();galCtx.strokeStyle=dom?oc:'#2a5080';galCtx.lineWidth=1.8;galCtx.stroke();
+    s.planets.forEach((p,i)=>{
+      const angle=-Math.PI/2+(i/s.planets.length)*Math.PI*2,pr=r+10+(i%2)*5;
+      galCtx.beginPath();galCtx.arc(pos.x,pos.y,pr,angle-.22,angle+.22);
+      galCtx.strokeStyle=p.owner?pc(p.owner)+'cc':'rgba(0,80,0,.4)';galCtx.lineWidth=2.2*galTf.sc;galCtx.stroke();
+    });
+    galCtx.fillStyle=dom?oc:'#5a7a9a';galCtx.font=`${Math.max(10,13*galTf.sc)}px serif`;galCtx.textAlign='center';galCtx.textBaseline='middle';galCtx.fillText('✦',pos.x,pos.y);
+    galCtx.fillStyle='rgba(0,255,65,.85)';galCtx.font=`${Math.max(7,10*galTf.sc)}px 'Orbitron',monospace`;galCtx.textAlign='center';galCtx.textBaseline='top';galCtx.fillText(s.name,pos.x,pos.y+r+4);
+    const own=s.planets.filter(p=>p.owner).length;
+    galCtx.fillStyle=own?'rgba(0,200,50,.7)':'rgba(0,80,30,.7)';galCtx.font=`${Math.max(6,8*galTf.sc)}px 'Share Tech Mono',monospace`;galCtx.fillText(`${own}/${s.planets.length}⬡`,pos.x,pos.y+r+15);
+    fl.forEach((f,i)=>{const p=S.players.find(pl=>pl.id===f.playerId),fc=p?p.color:'#4a6a8a';
+      const a=(i/Math.max(fl.length,1))*Math.PI*2-Math.PI/2,fr=r+20;
+      const fx=pos.x+Math.cos(a)*fr,fy=pos.y+Math.sin(a)*fr;
+      galCtx.beginPath();galCtx.arc(fx,fy,5*galTf.sc,0,Math.PI*2);galCtx.fillStyle=fc;galCtx.fill();
+      if(selFleet&&selFleet.id===f.id){galCtx.beginPath();galCtx.arc(fx,fy,8*galTf.sc,0,Math.PI*2);galCtx.strokeStyle='#fff';galCtx.lineWidth=1.5;galCtx.stroke();}
+    });
+  });
+}
+
+galCv.addEventListener('mousedown',e=>{if(e.button!==0)return;galDrag=false;galDs={x:e.clientX-galTf.x,y:e.clientY-galTf.y};galCv.addEventListener('mousemove',onGalDr);galCv.addEventListener('mouseup',onGalUp);});
+function onGalDr(e){const dx=Math.abs(e.clientX-galDs.x-galTf.x),dy=Math.abs(e.clientY-galDs.y-galTf.y);if(dx>3||dy>3)galDrag=true;if(galDrag){galTf.x=e.clientX-galDs.x;galTf.y=e.clientY-galDs.y;drawGal();}}
+function onGalUp(e){galCv.removeEventListener('mousemove',onGalDr);galCv.removeEventListener('mouseup',onGalUp);if(!galDrag)handleGalClick(e);}
+function handleGalClick(e){
+  const rc=galCv.getBoundingClientRect(),mx=e.clientX-rc.left,my=e.clientY-rc.top;
+  const hit=getGalSys(mx,my);
+  if(galMoveMode&&selFleet){
+    if(hit){const cs=S.systems.find(s=>s.id===selFleet.systemId);
+      if(cs&&cs.connections.includes(hit.id)){doGalMove(selFleet.id,hit.id);exitGalMove();}
+      else toast('⚠️ Système non adjacent');}
+    else exitGalMove();return;
+  }
+  // Check nebula delete click
+  if(isAdmin()&&(S.nebulae||[]).length){
+    const hitNeb=getGalNebula(mx,my);
+    if(hitNeb){
+      if(confirm(`Supprimer la nébuleuse "${hitNeb.name}" ?`)){
+        S.nebulae=S.nebulae.filter(n=>n.id!==hitNeb.id);
+        saveS();drawGal();toast('🌌 Nébuleuse supprimée');return;
+      }
+    }
+  }
+  if(hit){openSysView(hit.id);}
+}
+galCv.addEventListener('wheel',e=>{e.preventDefault();zoomGal(e.deltaY>0?.85:1.15,e.clientX-galCv.getBoundingClientRect().left,e.clientY-galCv.getBoundingClientRect().top);},{passive:false});
+galCv.addEventListener('mousemove',e=>{
+  const rc=galCv.getBoundingClientRect(),mx=e.clientX-rc.left,my=e.clientY-rc.top;
+  const hit=getGalSys(mx,my),t=document.getElementById('gal-tt');
+  if(hit){t.style.display='block';t.style.left=(mx+13)+'px';t.style.top=(my-8)+'px';
+    const fl=S.fleets.filter(f=>f.systemId===hit.id);
+    t.innerHTML=`<strong style="color:var(--glow)">${hit.name}</strong><br><span style="color:var(--text3);font-size:.64rem">${hit.planets.length} planète(s)</span>${fl.length?`<br><span style="color:var(--gold);font-size:.64rem">⚡ ${fl.length} flotte(s)</span>`:''}<br><span style="color:var(--text3);font-size:.62rem">[CLIC → ENTRER]</span>`;
+    return;
+  }
+  const neb=getGalNebula(mx,my);
+  if(neb){t.style.display='block';t.style.left=(mx+13)+'px';t.style.top=(my-8)+'px';
+    t.innerHTML=`<span style="color:var(--purple)">🌌 ${neb.name}</span><br><span style="color:var(--text3);font-size:.62rem">NÉBULEUSE MYSTÉRIEUSE</span><br><span style="color:var(--purple);font-size:.62rem">${neb.effect}</span>${isAdmin()?'<br><span style="color:var(--red);font-size:.6rem">[CLIC → SUPPRIMER]</span>':''}`;
+    return;
+  }
+  t.style.display='none';
+});
+function getGalSys(mx,my){return S.systems.find(s=>{const p=g2s(s.x,s.y);return Math.hypot(mx-p.x,my-p.y)<28*galTf.sc;});}
+function getGalNebula(mx,my){
+  return(S.nebulae||[]).find(n=>{
+    const pos=g2s(n.x,n.y),r=n.r*Math.min(galCv.width,galCv.height)*galTf.sc;
+    return Math.hypot(mx-pos.x,my-pos.y)<r;
+  });
+}
+window.zoomGal=function(d,cx,cy){cx=cx??galCv.width/2;cy=cy??galCv.height/2;const ns=Math.max(.25,Math.min(4,galTf.sc*d));galTf.x=cx-(cx-galTf.x)*(ns/galTf.sc);galTf.y=cy-(cy-galTf.y)*(ns/galTf.sc);galTf.sc=ns;drawGal();};
+window.resetGal=function(){galTf={x:0,y:0,sc:1};drawGal();};
+window.goGalaxy=function(){closeSysView();};
+
+// ── NEBULAE ──
+const NEBULA_EFFECTS=[
+  'Anomalie temporelle — D3 unités ennemies agissent deux fois',
+  'Champ de mines oublié — D3 blessures à toute unité entrant par ce système',
+  'Signal fantôme — Ajout D3 unités spectrales neutres au centre',
+  'Tempête psychique — Sorts impossibles ce tour',
+  'Artefact abandonné — Le vainqueur gagne +2 VP',
+  'Distorsion gravitationnelle — Portées divisées par 2 ce tour',
+  'Présence ancienne — Lancez D6 : 1-3 malus, 4-6 bonus aléatoire',
+];
+window.addNebula=function(){
+  if(!isAdmin())return toast('⚠️ Admin uniquement');
+  const name=prompt('Nom de la nébuleuse (laisser vide = aléatoire)','');
+  const nebulaName=name&&name.trim()?name.trim():'Nébuleuse '+String.fromCharCode(65+Math.floor(Math.random()*26))+'-'+Math.floor(Math.random()*99);
+  // Place in a random empty spot
+  const pos={x:.1+Math.random()*.8,y:.1+Math.random()*.8};
+  const effect=NEBULA_EFFECTS[Math.floor(Math.random()*NEBULA_EFFECTS.length)];
+  if(!S.nebulae)S.nebulae=[];
+  S.nebulae.push({id:'neb'+Date.now(),name:nebulaName,x:pos.x,y:pos.y,r:.08+Math.random()*.07,effect});
+  saveS();drawGal();
+  toast(`🌌 "${nebulaName}" ajoutée — Effet: ${effect.slice(0,40)}...`);
+};
+window.zoomSys=function(d){const ns=Math.max(.25,Math.min(4,sysTf.sc*d));const cx=sysCv.width/2,cy=sysCv.height/2;sysTf.x=cx-(cx-sysTf.x)*(ns/sysTf.sc);sysTf.y=cy-(cy-sysTf.y)*(ns/sysTf.sc);sysTf.sc=ns;drawSys();};
+window.resetSys=function(){sysTf={x:0,y:0,sc:1};drawSys();};
+window.openEditSys=function(){if(!curSysId)return;const sys=S.systems.find(s=>s.id===curSysId);if(!sys)return;document.getElementById('es-id').value=curSysId;document.getElementById('es-name').value=sys.name;openM('m-edit-sys');};
+window.addPlanetRandom=function(){
+  if(!curSysId)return;
+  const sys=S.systems.find(s=>s.id===curSysId);if(!sys)return;
+  const biomeKeys=Object.keys(BIOMES);
+  const biome=biomeKeys[Math.floor(Math.random()*biomeKeys.length)];
+  const names=['Alpha','Beta','Gamma','Delta','Epsilon','Zeta','Eta','Theta','Iota','Kappa','Lambda','Sigma','Omega','Prime'];
+  const used=sys.planets.map(p=>p.name.split(' ').pop());
+  const avail=names.filter(n=>!used.includes(n));
+  const pname=`${sys.name.split(' ')[0]} ${avail[0]||'Nova-'+Date.now().toString(36).slice(-3)}`;
+  // Place away from center (star at .5,.5), away from gate (.5,.08), away from other planets
+  let pos,tries=0;
+  do{
+    const angle=Math.random()*Math.PI*2;
+    const dist=.18+Math.random()*.2; // 0.18..0.38 from center
+    pos={
+      x:parseFloat(Math.min(.88,Math.max(.12,.5+Math.cos(angle)*dist)).toFixed(2)),
+      y:parseFloat(Math.min(.88,Math.max(.18,.5+Math.sin(angle)*dist)).toFixed(2)) // min .18 keeps away from gate at .08
+    };
+    tries++;
+    const tooCloseCenter=Math.hypot(pos.x-.5,pos.y-.5)<.15; // avoid star
+    const tooCloseGate=Math.hypot(pos.x-.5,pos.y-.08)<.12;  // avoid gate
+    const tooClosePlanet=sys.planets.some(p=>Math.hypot(p.pos.x-pos.x,p.pos.y-pos.y)<.13);
+    if(!tooCloseCenter&&!tooCloseGate&&!tooClosePlanet)break;
+  }while(tries<30);
+  const resources=generateResources(biome);
+  const newP={id:'p'+Date.now(),name:pname,biome,owner:null,resources,pos};
+  sys.planets.push(newP);
+  // Auto-connect to nearest existing planet if any
+  if(sys.planets.length>1){
+    const others=sys.planets.filter(p=>p.id!==newP.id);
+    const nearest=others.reduce((a,b)=>Math.hypot(b.pos.x-pos.x,b.pos.y-pos.y)<Math.hypot(a.pos.x-pos.x,a.pos.y-pos.y)?b:a);
+    sys.planetConnections=sys.planetConnections||[];
+    sys.planetConnections.push([newP.id,nearest.id]);
+  }
+  // Clear image cache (in case old entry exists)
+  Object.keys(_planetImgCache).forEach(k=>{if(k.startsWith(newP.id))delete _planetImgCache[k];});
+  saveS();drawGal();drawSys();
+  toast(`🪐 "${pname}" ajoutée · ${BIOMES[biome].e} ${BIOMES[biome].label}`);
+};
+function generateResources(biome){
+  const pools={
+    desert:['Énergie +2','Cristaux +2','Minéraux rares +1','Silice +3','Chaleur +1'],
+    ice:['Eau +3','Cristaux +2','Énergie +1','Gaz rare +2','Minéraux +1'],
+    ocean:['Bio +3','Eau +4','Nutriments +2','Énergie +1','Minéraux +1'],
+    forge:['Carburant +3','Métal +3','Énergie +2','Composants +2','Acier +1'],
+    jungle:['Bio +4','Nutriments +3','Médicaments +2','Eau +2','Artefacts +1'],
+    dead:['Fer +3','Minerais +2','Ruines +1','Énergie résiduelle +1'],
+    volcanic:['Énergie +4','Minéraux rares +3','Magma +2','Carburant +2'],
+    gas:['Carburant +4','Énergie +3','Gaz rare +3','Helium-3 +2'],
+    agricole:['Bio +5','Nourriture +4','Eau +3','Nutriments +3'],
+  };
+  const pool=pools[biome]||pools.dead;
+  const count=1+Math.floor(Math.random()*2);
+  const shuffled=[...pool].sort(()=>Math.random()-.5);
+  return shuffled.slice(0,count);
+}
+
+// ════════════════════════════════════════════════════
+// SYSTEM CANVAS (inner map)
+// ════════════════════════════════════════════════════
+const sysCv=document.getElementById('sys-canvas'),sysCtx=sysCv.getContext('2d');
+let sysTf={x:0,y:0,sc:1},sysDrag=false,sysDs={x:0,y:0};
+
+function resizeSys(){const a=document.getElementById('map-area');sysCv.width=a.clientWidth;sysCv.height=a.clientHeight;drawSys();}
+const s2s2=(wx,wy)=>({x:wx*sysCv.width*sysTf.sc+sysTf.x,y:wy*sysCv.height*sysTf.sc+sysTf.y});
+
+function drawSys(){
+  if(!curSysId)return;
+  const sys=S.systems.find(s=>s.id===curSysId);if(!sys)return;
+  sysCtx.clearRect(0,0,sysCv.width,sysCv.height);
+
+  // Background nebula
+  const cx=sysCv.width/2,cy=sysCv.height/2;
+  const ng=sysCtx.createRadialGradient(cx,cy,0,cx,cy,Math.max(cx,cy));
+  ng.addColorStop(0,'rgba(0,15,0,.7)');ng.addColorStop(1,'rgba(0,3,0,0)');
+  sysCtx.fillStyle=ng;sysCtx.fillRect(0,0,sysCv.width,sysCv.height);
+
+  const starPos=s2s2(.5,.5);
+  const gatePos=s2s2(.5,.08);
+  const gr=14*sysTf.sc;
+
+  // Star soft glow (background layer — drawn first so planets can overlap the glow)
+  const sg=sysCtx.createRadialGradient(starPos.x,starPos.y,0,starPos.x,starPos.y,70*sysTf.sc);
+  sg.addColorStop(0,'rgba(255,240,180,.6)');sg.addColorStop(.5,'rgba(255,160,40,.25)');sg.addColorStop(1,'transparent');
+  sysCtx.fillStyle=sg;sysCtx.beginPath();sysCtx.arc(starPos.x,starPos.y,70*sysTf.sc,0,Math.PI*2);sysCtx.fill();
+
+  // JUMP GATE
+  sysCtx.beginPath();sysCtx.arc(gatePos.x,gatePos.y,gr,0,Math.PI*2);
+  sysCtx.strokeStyle='rgba(0,212,255,.8)';sysCtx.lineWidth=2;sysCtx.setLineDash([4,3]);sysCtx.stroke();sysCtx.setLineDash([]);
+  sysCtx.fillStyle='rgba(0,212,255,.15)';sysCtx.fill();
+  sysCtx.font=`${Math.max(9,12*sysTf.sc)}px serif`;sysCtx.fillStyle='rgba(0,212,255,.9)';sysCtx.textAlign='center';sysCtx.textBaseline='middle';sysCtx.fillText('⬡',gatePos.x,gatePos.y);
+  sysCtx.font=`${Math.max(6,8*sysTf.sc)}px 'Share Tech Mono'`;sysCtx.fillStyle='rgba(0,212,255,.7)';sysCtx.textBaseline='top';sysCtx.fillText('JUMPGATE',gatePos.x,gatePos.y+gr+3);
+  // Line gate → star
+  sysCtx.beginPath();sysCtx.moveTo(gatePos.x,gatePos.y+gr);sysCtx.lineTo(starPos.x,starPos.y-22*sysTf.sc);
+  sysCtx.strokeStyle='rgba(0,212,255,.18)';sysCtx.lineWidth=1;sysCtx.setLineDash([3,5]);sysCtx.stroke();sysCtx.setLineDash([]);
+
+  // Planet connections
+  (sys.planetConnections||[]).forEach(([aid,bid])=>{
+    const pa=sys.planets.find(p=>p.id===aid),pb=sys.planets.find(p=>p.id===bid);
+    if(!pa||!pb)return;
+    const ap=s2s2(pa.pos.x,pa.pos.y),bp=s2s2(pb.pos.x,pb.pos.y);
+    sysCtx.beginPath();sysCtx.moveTo(ap.x,ap.y);sysCtx.lineTo(bp.x,bp.y);
+    sysCtx.strokeStyle='rgba(0,60,0,.5)';sysCtx.lineWidth=1.5;sysCtx.setLineDash([4,4]);sysCtx.stroke();sysCtx.setLineDash([]);
+  });
+
+  // Planets (drawn BEFORE star body so star is always on top)
+  sys.planets.forEach(p=>{
+    const pos=s2s2(p.pos.x,p.pos.y),r=28*sysTf.sc;
+    const own=p.owner?S.players.find(pl=>pl.id===p.owner):null;
+    const oc=own?own.color:'#2a5080';
+    const fleetsHere=S.fleets.filter(f=>f.systemId===curSysId&&f.planetId===p.id);
+    // Owner glow halo
+    if(own){const rgb=hx(oc),g=sysCtx.createRadialGradient(pos.x,pos.y,r*.4,pos.x,pos.y,r*2.5);
+      g.addColorStop(0,`rgba(${rgb.r},${rgb.g},${rgb.b},.25)`);g.addColorStop(1,'transparent');
+      sysCtx.fillStyle=g;sysCtx.beginPath();sysCtx.arc(pos.x,pos.y,r*2.5,0,Math.PI*2);sysCtx.fill();}
+    // Connection mode: highlight selected first planet
+    if(sysConnMode&&sysConnFirst===p.id){
+      sysCtx.beginPath();sysCtx.arc(pos.x,pos.y,r+9,0,Math.PI*2);
+      sysCtx.strokeStyle='rgba(0,255,170,.9)';sysCtx.lineWidth=2.5;sysCtx.setLineDash([]);sysCtx.stroke();
+    }
+    // Drag mode: highlight draggable planets
+    if(sysDragMode&&sysDragPlanet?.id===p.id){
+      sysCtx.beginPath();sysCtx.arc(pos.x,pos.y,r+6,0,Math.PI*2);
+      sysCtx.strokeStyle='rgba(170,255,0,.9)';sysCtx.lineWidth=2;sysCtx.setLineDash([3,2]);sysCtx.stroke();sysCtx.setLineDash([]);
+    }
+    // Move target ring
+    if(sysMoveMode&&selFleet){
+      let reachable=false;
+      if(!selFleet.planetId){reachable=true;}
+      else{const conns=sys.planetConnections||[];reachable=conns.some(([a,b])=>(a===selFleet.planetId&&b===p.id)||(b===selFleet.planetId&&a===p.id));}
+      if(reachable&&p.id!==selFleet.planetId){
+        sysCtx.beginPath();sysCtx.arc(pos.x,pos.y,r+7,0,Math.PI*2);
+        sysCtx.strokeStyle='rgba(255,107,53,.8)';sysCtx.lineWidth=2;sysCtx.setLineDash([3,3]);sysCtx.stroke();sysCtx.setLineDash([]);}
+    }
+    // Circle backdrop
+    sysCtx.beginPath();sysCtx.arc(pos.x,pos.y,r,0,Math.PI*2);
+    const bg=sysCtx.createRadialGradient(pos.x-r*.3,pos.y-r*.3,0,pos.x,pos.y,r);
+    bg.addColorStop(0,own?oc+'44':'#001400');bg.addColorStop(1,'rgba(0,5,0,.95)');
+    sysCtx.fillStyle=bg;sysCtx.fill();
+    // Planet SVG skin
+    const pImgSz=Math.max(32,Math.round(r*2));
+    getPlanetImg(p,pImgSz,(img)=>{
+      sysCtx.save();
+      sysCtx.beginPath();sysCtx.arc(pos.x,pos.y,r-.5,0,Math.PI*2);sysCtx.clip();
+      sysCtx.drawImage(img,pos.x-r,pos.y-r,r*2,r*2);
+      sysCtx.restore();
+      sysCtx.beginPath();sysCtx.arc(pos.x,pos.y,r,0,Math.PI*2);
+      sysCtx.strokeStyle=own?oc:'rgba(0,80,0,.6)';sysCtx.lineWidth=own?2.5:1.5;sysCtx.stroke();
+    });
+    // Fallback ring
+    sysCtx.beginPath();sysCtx.arc(pos.x,pos.y,r,0,Math.PI*2);
+    sysCtx.strokeStyle=own?oc:'rgba(0,80,0,.6)';sysCtx.lineWidth=own?2.5:1.5;sysCtx.stroke();
+    // Name label — green phosphor style
+    sysCtx.font=`${Math.max(7,9*sysTf.sc)}px 'Share Tech Mono',monospace`;sysCtx.fillStyle='rgba(0,255,65,.85)';sysCtx.textAlign='center';sysCtx.textBaseline='top';sysCtx.fillText(p.name,pos.x,pos.y+r+3);
+    if(own){sysCtx.font=`${Math.max(6,8*sysTf.sc)}px 'Share Tech Mono'`;sysCtx.fillStyle=oc;sysCtx.fillText(own.name,pos.x,pos.y+r+14);}
+    // Fleet pips
+    fleetsHere.forEach((f,i)=>{const pl=S.players.find(q=>q.id===f.playerId),fc=pl?pl.color:'#4a6a8a';
+      const a=(i/Math.max(fleetsHere.length,1))*Math.PI*2-Math.PI/2,fr=r+18;
+      const fx=pos.x+Math.cos(a)*fr,fy=pos.y+Math.sin(a)*fr;
+      sysCtx.beginPath();sysCtx.arc(fx,fy,5*sysTf.sc,0,Math.PI*2);sysCtx.fillStyle=fc;sysCtx.fill();
+      if(selFleet&&selFleet.id===f.id){sysCtx.beginPath();sysCtx.arc(fx,fy,8*sysTf.sc,0,Math.PI*2);sysCtx.strokeStyle='#fff';sysCtx.lineWidth=1.5;sysCtx.stroke();}
+    });
+  });
+
+  // ── STAR BODY drawn LAST so always on top of planets ──
+  // Hard disc
+  sysCtx.beginPath();sysCtx.arc(starPos.x,starPos.y,20*sysTf.sc,0,Math.PI*2);
+  const starFill=sysCtx.createRadialGradient(starPos.x-6*sysTf.sc,starPos.y-6*sysTf.sc,0,starPos.x,starPos.y,20*sysTf.sc);
+  starFill.addColorStop(0,'#fff8e0');starFill.addColorStop(.4,'#ffe060');starFill.addColorStop(1,'#ff8800');
+  sysCtx.fillStyle=starFill;sysCtx.fill();
+  // Bright corona ring
+  sysCtx.beginPath();sysCtx.arc(starPos.x,starPos.y,20*sysTf.sc,0,Math.PI*2);
+  sysCtx.strokeStyle='rgba(255,220,80,.7)';sysCtx.lineWidth=3*sysTf.sc;sysCtx.stroke();
+  // Name below star
+  sysCtx.font=`${Math.max(8,11*sysTf.sc)}px 'Orbitron',monospace`;
+  sysCtx.fillStyle='rgba(255,210,100,.9)';sysCtx.textAlign='center';sysCtx.textBaseline='top';
+  sysCtx.fillText(sys.name,starPos.x,starPos.y+22*sysTf.sc);
+
+  // Gate fleets
+  const gateFleets=S.fleets.filter(f=>f.systemId===curSysId&&!f.planetId);
+  gateFleets.forEach((f,i)=>{const pl=S.players.find(q=>q.id===f.playerId),fc=pl?pl.color:'#4a6a8a';
+    const a=(i/Math.max(gateFleets.length,1))*Math.PI*2,fr=22*sysTf.sc;
+    const fx=gatePos.x+Math.cos(a)*fr,fy=gatePos.y+Math.sin(a)*fr;
+    sysCtx.beginPath();sysCtx.arc(fx,fy,5*sysTf.sc,0,Math.PI*2);sysCtx.fillStyle=fc;sysCtx.fill();
+    if(selFleet&&selFleet.id===f.id){sysCtx.beginPath();sysCtx.arc(fx,fy,8*sysTf.sc,0,Math.PI*2);sysCtx.strokeStyle='#fff';sysCtx.lineWidth=1.5;sysCtx.stroke();}
+  });
+  // Gate move target
+  if(sysMoveMode&&selFleet&&selFleet.planetId!==null){
+    sysCtx.beginPath();sysCtx.arc(gatePos.x,gatePos.y,gr+5,0,Math.PI*2);
+    sysCtx.strokeStyle='rgba(0,212,255,.7)';sysCtx.lineWidth=2;sysCtx.setLineDash([3,3]);sysCtx.stroke();sysCtx.setLineDash([]);
+  }
+}
+
+sysCv.addEventListener('mousedown',e=>{
+  if(e.button!==0)return;
+  const rc=sysCv.getBoundingClientRect(),mx=e.clientX-rc.left,my=e.clientY-rc.top;
+  // Drag mode: pick up a planet
+  if(sysDragMode&&isAdmin()){
+    const sys=S.systems.find(s=>s.id===curSysId);
+    const hitP=sys?.planets.find(p=>{const pos=s2s2(p.pos.x,p.pos.y);return Math.hypot(mx-pos.x,my-pos.y)<32*sysTf.sc;});
+    if(hitP){sysDragPlanet=hitP;sysCv.style.cursor='grabbing';return;}
+  }
+  // Normal pan
+  sysDrag=false;sysDs={x:e.clientX-sysTf.x,y:e.clientY-sysTf.y};
+  sysCv.addEventListener('mousemove',onSysDr);sysCv.addEventListener('mouseup',onSysUp);
+});
+
+function onSysDr(e){
+  // If dragging a planet
+  if(sysDragPlanet){
+    const rc=sysCv.getBoundingClientRect();
+    sysDragPlanet.pos.x=parseFloat(((e.clientX-rc.left-sysTf.x)/(sysCv.width*sysTf.sc)).toFixed(3));
+    sysDragPlanet.pos.y=parseFloat(((e.clientY-rc.top-sysTf.y)/(sysCv.height*sysTf.sc)).toFixed(3));
+    // Clamp to valid area (avoid star center and gate)
+    sysDragPlanet.pos.x=Math.max(.05,Math.min(.92,sysDragPlanet.pos.x));
+    sysDragPlanet.pos.y=Math.max(.15,Math.min(.92,sysDragPlanet.pos.y));
+    // Clear image cache for this planet
+    Object.keys(_planetImgCache).forEach(k=>{if(k.startsWith(sysDragPlanet.id+'_'))delete _planetImgCache[k];});
+    drawSys();return;
+  }
+  const dx=Math.abs(e.clientX-sysDs.x-sysTf.x),dy=Math.abs(e.clientY-sysDs.y-sysTf.y);
+  if(dx>3||dy>3)sysDrag=true;
+  if(sysDrag){sysTf.x=e.clientX-sysDs.x;sysTf.y=e.clientY-sysDs.y;drawSys();}
+}
+function onSysUp(e){
+  sysCv.removeEventListener('mousemove',onSysDr);sysCv.removeEventListener('mouseup',onSysUp);
+  if(sysDragPlanet){
+    sysCv.style.cursor='move';
+    saveS();drawGal();
+    sysDragPlanet=null;return;
+  }
+  if(!sysDrag)handleSysClick(e);
+}
+
+// Toggle drag mode
+window.toggleDragMode=function(){
+  sysDragMode=!sysDragMode;
+  if(sysDragMode){sysConnMode=false;sysConnFirst=null;document.getElementById('btn-conn-mode').classList.remove('active-mode');}
+  document.getElementById('btn-drag-mode').classList.toggle('active-mode',sysDragMode);
+  sysCv.className=sysDragMode?'drag-mode':(sysConnMode?'conn-mode':'');
+  toast(sysDragMode?'✥ Mode déplacement — glisser les planètes':'Mode déplacement désactivé');
+};
+
+// Toggle connection edit mode
+window.toggleConnMode=function(){
+  sysConnMode=!sysConnMode;sysConnFirst=null;
+  if(sysConnMode){sysDragMode=false;sysDragPlanet=null;document.getElementById('btn-drag-mode').classList.remove('active-mode');}
+  document.getElementById('btn-conn-mode').classList.toggle('active-mode',sysConnMode);
+  sysCv.className=sysConnMode?'conn-mode':'';
+  toast(sysConnMode?'⇄ Mode connexions — clic P1 puis P2 pour créer/supprimer':'Mode connexions désactivé');
+};
+
+function handleSysClick(e){
+  if(!curSysId)return;
+  const sys=S.systems.find(s=>s.id===curSysId);if(!sys)return;
+  const rc=sysCv.getBoundingClientRect(),mx=e.clientX-rc.left,my=e.clientY-rc.top;
+  const gatePos=s2s2(.5,.08),gr=18*sysTf.sc;
+  const hitP=sys.planets.find(p=>{const pos=s2s2(p.pos.x,p.pos.y);return Math.hypot(mx-pos.x,my-pos.y)<32*sysTf.sc;});
+
+  // ── Connection edit mode ──
+  if(sysConnMode&&isAdmin()){
+    if(!hitP){sysConnFirst=null;toast('Cliquez sur une planète');return;}
+    if(!sysConnFirst){
+      sysConnFirst=hitP.id;
+      toast(`⇄ "${hitP.name}" sélectionnée — cliquez une 2ème planète`);
+      drawSys();return;
+    }
+    if(sysConnFirst===hitP.id){sysConnFirst=null;drawSys();return;}
+    // Toggle connection between sysConnFirst and hitP
+    sys.planetConnections=sys.planetConnections||[];
+    const idx=sys.planetConnections.findIndex(([a,b])=>(a===sysConnFirst&&b===hitP.id)||(b===sysConnFirst&&a===hitP.id));
+    if(idx>=0){
+      sys.planetConnections.splice(idx,1);
+      toast(`⇄ Connexion supprimée`);
+    }else{
+      sys.planetConnections.push([sysConnFirst,hitP.id]);
+      toast(`⇄ Connexion ajoutée`);
+    }
+    sysConnFirst=null;
+    saveS();drawSys();return;
+  }
+
+  // ── Normal mode ──
+  if(Math.hypot(mx-gatePos.x,my-gatePos.y)<gr){
+    if(sysMoveMode&&selFleet){doSysMove(selFleet.id,null);exitSysMove();return;}
+    openPlanetDetail(null);return;
+  }
+  if(hitP){
+    if(sysMoveMode&&selFleet){doSysMove(selFleet.id,hitP.id);exitSysMove();return;}
+    openPlanetDetail(hitP.id);
+  }
+}
+
+sysCv.addEventListener('wheel',e=>{e.preventDefault();const d=e.deltaY>0?.85:1.15;const ns=Math.max(.25,Math.min(4,sysTf.sc*d));const cx=e.clientX-sysCv.getBoundingClientRect().left,cy=e.clientY-sysCv.getBoundingClientRect().top;sysTf.x=cx-(cx-sysTf.x)*(ns/sysTf.sc);sysTf.y=cy-(cy-sysTf.y)*(ns/sysTf.sc);sysTf.sc=ns;drawSys();},{passive:false});
+
+sysCv.addEventListener('mousemove',e=>{
+  if(!curSysId)return;
+  const sys=S.systems.find(s=>s.id===curSysId);if(!sys)return;
+  const rc=sysCv.getBoundingClientRect(),mx=e.clientX-rc.left,my=e.clientY-rc.top;
+  const gatePos=s2s2(.5,.08),gr=18*sysTf.sc,t=document.getElementById('sys-tt');
+  if(Math.hypot(mx-gatePos.x,my-gatePos.y)<gr){
+    t.style.display='block';t.style.left=(mx+13)+'px';t.style.top=(my-8)+'px';
+    const gfl=S.fleets.filter(f=>f.systemId===curSysId&&!f.planetId);
+    t.innerHTML=`<strong style="font-family:Orbitron;font-size:.7rem;color:var(--glow)">⬡ JUMPGATE</strong><br><span style="color:var(--text3);font-size:.62rem">Point d'entrée/sortie du système</span>${gfl.length?`<br><span style="color:var(--gold);font-size:.62rem">⚡ ${gfl.length} flotte(s) en transit</span>`:''}`;return;
+  }
+  const hitP=sys.planets.find(p=>{const pos=s2s2(p.pos.x,p.pos.y);return Math.hypot(mx-pos.x,my-pos.y)<32*sysTf.sc;});
+  if(hitP){
+    t.style.display='block';t.style.left=(mx+13)+'px';t.style.top=(my-8)+'px';
+    const bm=BIOMES[hitP.biome]||BIOMES.dead,own=S.players.find(pl=>pl.id===hitP.owner);
+    t.innerHTML=`<strong style="font-family:Orbitron;font-size:.7rem;color:var(--glow)">${hitP.name}</strong><br><span style="font-size:.66rem">${bm.e} ${bm.label}</span><br><span style="color:${own?own.color:'var(--text3)'};font-size:.64rem">${own?own.name:'Neutre'}</span>`;
+  }else t.style.display='none';
+});
+
+// ════════════════════════════════════════════════════
+// SYSTEM VIEW OPEN/CLOSE
+// ════════════════════════════════════════════════════
+function openSysView(sysId){
+  curSysId=sysId;const sys=S.systems.find(s=>s.id===sysId);if(!sys)return;
+  sysTf={x:0,y:0,sc:1};
+  document.getElementById('mission-panel').classList.remove('open');
+  document.getElementById('sys-view').classList.add('open');
+  const el=document.getElementById('bc-sys-name');if(el)el.textContent=sys.name;
+  setTimeout(()=>{resizeSys();},50);
+}
+function closeSysView(){
+  curSysId=null;curPlanetId=null;
+  document.getElementById('sys-view').classList.remove('open');
+  document.getElementById('pd-ov').classList.remove('open');
+  // Reset all sys edit modes
+  sysDragMode=false;sysConnMode=false;sysDragPlanet=null;sysConnFirst=null;
+  const bd=document.getElementById('btn-drag-mode');if(bd)bd.classList.remove('active-mode');
+  const bc=document.getElementById('btn-conn-mode');if(bc)bc.classList.remove('active-mode');
+  exitSysMove();
+  drawGal();
+}
+
+// ════════════════════════════════════════════════════
+// PLANET DETAIL
+// ════════════════════════════════════════════════════
+function openPlanetDetail(planetId){
+  if(!curSysId)return;
+  curPlanetId=planetId;
+  const sys=S.systems.find(s=>s.id===curSysId);
+  const p=planetId?sys.planets.find(pl=>pl.id===planetId):null;
+  const bm=p?(BIOMES[p.biome]||BIOMES.dead):null;
+  const own=p&&p.owner?S.players.find(pl=>pl.id===p.owner):null;
+  const oc=own?own.color:'#4a6a8a';
+  if(p){
+    document.getElementById('pd-vis').innerHTML=pSVG(p,170);
+    document.getElementById('pd-vis').style.background=`radial-gradient(ellipse at 30% 30%,${bm.a},var(--void))`;
+    document.getElementById('pd-name').textContent=p.name;
+    document.getElementById('pd-sub').textContent=`${bm.e} ${bm.label}`;
+  }else{
+    document.getElementById('pd-vis').innerHTML=`<div style="font-size:2.5rem">⬡</div>`;
+    document.getElementById('pd-vis').style.background='radial-gradient(ellipse,rgba(0,212,255,.15),var(--void))';
+    document.getElementById('pd-name').textContent='JUMPGATE';
+    document.getElementById('pd-sub').textContent='Point d\'entrée et sortie du système';
+  }
+  document.getElementById('pd-owner').innerHTML=p?`<div style="width:9px;height:9px;border-radius:50%;background:${oc};box-shadow:0 0 5px ${oc}"></div><span style="color:${oc};font-size:.76rem">${own?own.name:'NEUTRE'}</span>`:
+    `<span style="color:var(--glow);font-size:.76rem">Station neutre — passage libre</span>`;
+  document.getElementById('pd-res').innerHTML=p?(p.resources.map(r=>`<span style="font-size:.6rem;padding:2px 6px;background:var(--deep);border:1px solid var(--border);border-radius:3px;color:var(--text2);font-family:'Share Tech Mono'">${r}</span>`).join('')):'';
+  const fHere=p?S.fleets.filter(f=>f.systemId===curSysId&&f.planetId===p.id):S.fleets.filter(f=>f.systemId===curSysId&&!f.planetId);
+  document.getElementById('pd-fleets').innerHTML=fHere.length?
+    `<div style="font-family:'Orbitron';font-size:.6rem;color:var(--text3);margin-bottom:5px">FLOTTES</div>${fHere.map(f=>{const pl=S.players.find(q=>q.id===f.playerId),fc=pl?pl.color:'#4a6a8a';return`<div style="display:flex;align-items:center;gap:6px;padding:5px 7px;background:var(--deep);border:1px solid ${fc}44;border-radius:4px;margin-bottom:3px;font-size:.72rem"><div style="width:7px;height:7px;border-radius:50%;background:${fc}"></div><span style="color:${fc}">${f.name}</span><button class="btn btn-a btn-sm" style="margin-left:auto;font-size:.5rem" onclick="startSysMove('${f.id}')">🚀 DÉPLACER</button></div>`;}).join('')}`:
+    `<div style="color:var(--text3);font-size:.72rem">Aucune flotte</div>`;
+  let acts='';
+  if(isAdmin()||S.session.playerId){
+    if(p)acts+=`<button class="btn btn-p btn-sm" onclick="editPlanet('${curSysId}','${p.id}')">✏️ ÉDITER</button>`;
+    if(p)acts+=`<button class="btn btn-g btn-sm" onclick="startConquer('${curSysId}','${p.id}')">⚑ CONQUÉRIR</button>`;
+    if(p)acts+=`<button class="btn btn-pu btn-sm" onclick="openMissionGenForPlanet('${p.biome}')">🎲 MISSION ICI</button>`;
+    acts+=`<button class="btn btn-a btn-sm" onclick="openM('m-battle')">⚔️ BATAILLE</button>`;
+    if(p&&isAdmin())acts+=`<button class="btn btn-d btn-sm" onclick="confirmDeletePlanet('${curSysId}','${p.id}')" title="Supprimer cette planète">🗑️</button>`;
+  }
+  acts+=`<button class="btn btn-sm" style="border-color:var(--border);color:var(--text3)" onclick="closePD()">✕</button>`;
+  document.getElementById('pd-acts').innerHTML=acts;
+  document.getElementById('pd-ov').classList.add('open');
+}
+window.closePD=function(){document.getElementById('pd-ov').classList.remove('open');curPlanetId=null;};
+
+window.confirmDeletePlanet=function(sid,pid){
+  const sys=S.systems.find(s=>s.id===sid),p=sys?.planets.find(pl=>pl.id===pid);if(!p)return;
+  // Show inline confirmation in the actions bar
+  document.getElementById('pd-acts').innerHTML=`
+    <span style="font-family:'Orbitron';font-size:.6rem;color:var(--red);align-self:center">Supprimer ${p.name} ?</span>
+    <button class="btn btn-d btn-sm" onclick="deletePlanet('${sid}','${pid}')">✓ CONFIRMER</button>
+    <button class="btn btn-sm" style="border-color:var(--border);color:var(--text3)" onclick="openPlanetDetail('${pid}')">✕ ANNULER</button>`;
+};
+
+window.deletePlanet=function(sid,pid){
+  const sys=S.systems.find(s=>s.id===sid);if(!sys)return;
+  const p=sys.planets.find(pl=>pl.id===pid);
+  const pname=p?p.name:'?';
+  // Remove planet
+  sys.planets=sys.planets.filter(pl=>pl.id!==pid);
+  // Remove planet connections involving this planet
+  sys.planetConnections=(sys.planetConnections||[]).filter(([a,b])=>a!==pid&&b!==pid);
+  // Move fleets that were on this planet to gate
+  S.fleets.filter(f=>f.systemId===sid&&f.planetId===pid).forEach(f=>f.planetId=null);
+  // Clear image cache
+  Object.keys(_planetImgCache).forEach(k=>{if(k.startsWith(pid+'_'))delete _planetImgCache[k];});
+  addLog(`Tour ${S.turn} — 🗑️ Planète <strong>${pname}</strong> supprimée du système ${sys.name}`);
+  closePD();saveS();renderAll();drawGal();drawSys();
+  toast(`🗑️ "${pname}" supprimée`);
+};
+
+window.startConquer=function(sid,pid){
+  const sys=S.systems.find(s=>s.id===sid),p=sys?.planets.find(pl=>pl.id===pid);if(!p)return;
+  if(S.session.mode==='player'&&S.session.playerId){
+    p.owner=S.session.playerId;const pl=S.players.find(q=>q.id===S.session.playerId);
+    addLog(`Tour ${S.turn} — <strong style="color:${pl?.color}">${pl?.name||'?'}</strong> conquiert <strong>${p.name}</strong>!`,'v');
+    saveS();renderAll();drawSys();openPlanetDetail(pid);toast('⚑ Planète conquise!');
+  }else{
+    document.getElementById('pd-acts').innerHTML=`<select class="fs" id="cq-own" style="font-size:.72rem"><option value="">Neutre</option>${S.players.map(pl=>`<option value="${pl.id}" ${p.owner===pl.id?'selected':''}>${pl.name}</option>`).join('')}</select><button class="btn btn-p btn-sm" onclick="applyConquer('${sid}','${pid}')">OK</button><button class="btn btn-sm" style="border-color:var(--border);color:var(--text3)" onclick="openPlanetDetail('${pid}')">✕</button>`;
+  }
+};
+window.applyConquer=function(sid,pid){
+  const sys=S.systems.find(s=>s.id===sid),p=sys?.planets.find(pl=>pl.id===pid);if(!p)return;
+  p.owner=document.getElementById('cq-own').value||null;
+  const pl=S.players.find(q=>q.id===p.owner);
+  addLog(`Tour ${S.turn} — <strong style="color:${pl?.color||'#aaa'}">${pl?.name||'Neutre'}</strong> prend <strong>${p.name}</strong>`,'v');
+  saveS();renderAll();drawSys();openPlanetDetail(pid);toast('⚑ Propriété mise à jour');
+};
+
+// ════════════════════════════════════════════════════
+// EDIT PLANET
+// ════════════════════════════════════════════════════
+window.editPlanet=function(sid,pid){
+  const sys=S.systems.find(s=>s.id===sid),p=sys?.planets.find(pl=>pl.id===pid);if(!p)return;
+  document.getElementById('ep-sid').value=sid;document.getElementById('ep-pid').value=pid;
+  document.getElementById('ep-name').value=p.name;
+  document.getElementById('ep-res').value=p.resources.join(', ');
+  document.getElementById('ep-owner').innerHTML=`<option value="">Neutre</option>`+S.players.map(pl=>`<option value="${pl.id}" ${p.owner===pl.id?'selected':''}>${pl.name}</option>`).join('');
+  document.getElementById('ep-img').value='';
+  buildBiomeGrid(p.biome||'dead');
+  // Preview
+  updatePlanetPreview(p);
+  openM('m-edit-planet');
+};
+function updatePlanetPreview(p){
+  const prev=document.getElementById('ep-preview');if(!prev)return;
+  prev.innerHTML=pSVG(p,110);
+}
+window.previewSkin=function(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const tmpP={customImage:e.target.result,biome:'dead',id:'prev',resources:[]};
+    document.getElementById('ep-preview').innerHTML=pSVG(tmpP,110);
+  };
+  reader.readAsDataURL(file);
+};
+window.removeSkin=function(){
+  const pid=document.getElementById('ep-pid').value;
+  const sid=document.getElementById('ep-sid').value;
+  const sys=S.systems.find(s=>s.id===sid),p=sys?.planets.find(pl=>pl.id===pid);
+  if(p){delete p.customImage;delete _planetImgCache[`${p.id}_${p.biome}_custom_${Math.round(28*sysTf.sc*2)}`];
+    // Clear all cache for this planet
+    Object.keys(_planetImgCache).forEach(k=>{if(k.startsWith(p.id))delete _planetImgCache[k];});}
+  document.getElementById('ep-img').value='';
+  if(p)updatePlanetPreview(p);
+  toast('🗑️ Skin retiré');
+};
+function buildBiomeGrid(sel){
+  document.getElementById('bgrid').innerHTML=Object.entries(BIOMES).map(([k,b])=>
+    `<div class="bo ${sel===k?'sel':''}" onclick="selBiome('${k}')"><div class="bo-e">${b.e}</div><div class="bo-l">${b.label}</div></div>`).join('');
+}
+window.selBiome=function(k){
+  document.querySelectorAll('#bgrid .bo').forEach((el,i)=>el.classList.toggle('sel',Object.keys(BIOMES)[i]===k));
+  // Live preview update on biome change (only if no custom image)
+  const pid=document.getElementById('ep-pid').value;
+  const sid=document.getElementById('ep-sid').value;
+  const sys=S.systems.find(s=>s.id===sid),p=sys?.planets.find(pl=>pl.id===pid);
+  if(p&&!p.customImage){const prev=document.getElementById('ep-preview');if(prev)prev.innerHTML=pSVG({...p,biome:k},110);}
+};
+function getSelBiome(){const i=[...document.querySelectorAll('#bgrid .bo')].findIndex(e=>e.classList.contains('sel'));return i>=0?Object.keys(BIOMES)[i]:'dead';}
+window.savePlanetEdit=function(){
+  const sid=document.getElementById('ep-sid').value,pid=document.getElementById('ep-pid').value;
+  const sys=S.systems.find(s=>s.id===sid),p=sys?.planets.find(pl=>pl.id===pid);if(!p)return;
+  p.name=document.getElementById('ep-name').value.trim()||p.name;
+  p.biome=getSelBiome();p.owner=document.getElementById('ep-owner').value||null;
+  p.resources=document.getElementById('ep-res').value.split(',').map(s=>s.trim()).filter(Boolean);
+  // Clear image cache for this planet
+  Object.keys(_planetImgCache).forEach(k=>{if(k.startsWith(p.id+'_'))delete _planetImgCache[k];});
+  const f=document.getElementById('ep-img').files[0];
+  if(f){const r2=new FileReader();r2.onload=e=>{p.customImage=e.target.result;Object.keys(_planetImgCache).forEach(k=>{if(k.startsWith(p.id+'_'))delete _planetImgCache[k];});saveS();drawGal();if(curSysId)drawSys();if(curPlanetId===pid)openPlanetDetail(pid);};r2.readAsDataURL(f);}
+  else{saveS();drawGal();if(curSysId)drawSys();if(curPlanetId===pid)openPlanetDetail(pid);}
+  closeM('m-edit-planet');toast('✅ Planète mise à jour');
+};
+
+// ════════════════════════════════════════════════════
+// FLEET MOVEMENT
+// ════════════════════════════════════════════════════
+function doGalMove(fid,nsid){
+  const f=S.fleets.find(fl=>fl.id===fid);if(!f)return;
+  const os=S.systems.find(s=>s.id===f.systemId),ns=S.systems.find(s=>s.id===nsid);
+  f.systemId=nsid;f.planetId=null;f.status='orbit'; // arrives at gate
+  const enem=S.fleets.filter(fl=>fl.id!==fid&&fl.systemId===nsid&&fl.playerId!==f.playerId);
+  if(enem.length){f.status='battle';enem.forEach(fl=>fl.status='battle');toast(`⚔️ Contact ennemi dans ${ns?.name}!`);}
+  addLog(`Tour ${S.turn} — Flotte <strong>${f.name}</strong> : ${os?.name||'?'} → <strong>${ns?.name||'?'}</strong> [Jumpgate]`);
+  saveS();renderAll();drawGal();
+}
+function exitGalMove(){galMoveMode=false;galCv.classList.remove('move-mode');document.getElementById('gal-mv-ban').classList.remove('on');drawGal();}
+
+function doSysMove(fid,newPlanetId){
+  const f=S.fleets.find(fl=>fl.id===fid);if(!f)return;
+  const sys=S.systems.find(s=>s.id===f.systemId);
+  const oldPname=f.planetId?sys?.planets.find(p=>p.id===f.planetId)?.name:'Jumpgate';
+  const newPname=newPlanetId?sys?.planets.find(p=>p.id===newPlanetId)?.name:'Jumpgate';
+  f.planetId=newPlanetId;f.status='orbit';
+  const enem=S.fleets.filter(fl=>fl.id!==fid&&fl.systemId===f.systemId&&fl.planetId===newPlanetId&&fl.playerId!==f.playerId);
+  if(enem.length){f.status='battle';enem.forEach(fl=>fl.status='battle');toast(`⚔️ Contact ennemi sur ${newPname}!`);}
+  addLog(`Tour ${S.turn} — Flotte <strong>${f.name}</strong> : ${oldPname} → <strong>${newPname}</strong>`);
+  saveS();renderAll();drawSys();
+}
+function exitSysMove(){sysMoveMode=false;sysCv.classList.remove('move-mode');document.getElementById('sv-mv-ban').classList.remove('on');drawSys();}
+
+window.startSysMove=function(fid){
+  selFleet=S.fleets.find(f=>f.id===fid);if(!selFleet)return;
+  sysMoveMode=true;sysCv.classList.add('move-mode');
+  document.getElementById('sv-mv-ban').classList.add('on');
+  closePD();renderFleets();drawSys();toast('🚀 Cliquez une planète ou le Jumpgate');
+};
+window.startMove=function(fid){
+  selFleet=S.fleets.find(f=>f.id===fid);if(!selFleet)return;
+  if(curSysId&&selFleet.systemId===curSysId){
+    // Move within system
+    sysMoveMode=true;sysCv.classList.add('move-mode');document.getElementById('sv-mv-ban').classList.add('on');
+    closePD();renderFleets();drawSys();toast('🚀 Cliquez une destination dans le système');
+  }else{
+    // Inter-system move — close sys view but remember fleet's system so we can return
+    const fromSys=selFleet.systemId;
+    galMoveMode=true;galCv.classList.add('move-mode');document.getElementById('gal-mv-ban').classList.add('on');
+    closeSysView();stab('s-fleets');renderFleets();drawGal();
+    toast('🚀 Cliquez un système adjacent — ou Échap pour annuler');
+  }
+};
+
+// ════════════════════════════════════════════════════
+// MISSION GENERATOR
+// ════════════════════════════════════════════════════
+window.openMissionGen=function(){
+  missionPlanetBiome=null;
+  document.getElementById('mission-panel').classList.add('open');
+  document.getElementById('mpill').style.display='none';
+};
+window.openMissionGenForPlanet=function(biome){
+  missionPlanetBiome=biome;closePD();
+  document.getElementById('mission-panel').classList.add('open');
+  document.getElementById('mpill').style.display='none';
+  generateMission(true);
+};
+window.closeMissionGen=function(){
+  document.getElementById('mission-panel').classList.remove('open');
+  document.getElementById('mpill').style.display='';
+};
+
+function rand(arr){return arr[Math.floor(Math.random()*arr.length)];}
+function randInt(n){return Math.floor(Math.random()*n);}
+function dN(n){return randInt(n)+1;}
+function dNp(n,plus){return dN(n)+plus;}
+
+window.generateMission=function(withPlanet){
+  const biome=withPlanet?missionPlanetBiome:null;
+  const bm=biome?(BIOMES[biome]||BIOMES.dead):null;
+
+  // Pick mission
+  const mission=rand(OPR.missions);
+  // Pick deployment
+  const deploy=rand(OPR.deployments);
+  // Pick battle condition
+  const condType=rand(OPR.battleConditions);
+  const cond=rand(condType.list);
+  // Pick 1-2 random events (50% chance each)
+  const events=[];OPR.randomEvents.forEach(ev=>{if(Math.random()<.3)events.push(ev);});
+  const selectedEvents=events.slice(0,Math.min(events.length,2));
+  // Pick side missions (one per category)
+  const sm_combat=rand(OPR.sideMissions.combat);
+  const sm_tactical=rand(OPR.sideMissions.tactical);
+  const sm_heroic=rand(OPR.sideMissions.heroic);
+  // Weather
+  let weather=null;
+  if(bm){weather={icon:rand(['☁️','⛅','🌤️','⚡','🌧️']),name:rand(bm.weather),biome:bm.label,emoji:bm.e};}
+  else{
+    const anyBiome=rand(Object.values(BIOMES));
+    weather={icon:'🌍',name:rand(anyBiome.weather),biome:'Aléatoire',emoji:anyBiome.e};
+  }
+  // Objectives count
+  const objCount=mission.id==='duel'?dNp(3,2):(mission.id==='seize'?4:(mission.id==='relic'?3:(mission.id==='hill'?1:1)));
+
+  const html=`
+  <div class="mg-card">
+    <div class="mg-card-title">🎯 MISSION PRINCIPALE</div>
+    <div class="mg-result">
+      <strong>${mission.name}</strong><br>
+      <span style="color:var(--text2)">${mission.desc}</span><br><br>
+      <span class="tag tag-mission">${objCount} objectif(s)</span>
+      <span class="tag tag-mission">${mission.vp}</span>
+    </div>
+  </div>
+  <div class="mg-card">
+    <div class="mg-card-title">🪖 DÉPLOIEMENT</div>
+    <div class="mg-result">
+      <strong>${deploy.name}</strong><br>
+      <span style="color:var(--text2)">${deploy.desc}</span><br><br>
+      <span class="tag tag-deploy">${deploy.id}</span>
+    </div>
+  </div>
+  <div class="mg-card">
+    <div class="mg-card-title">🌍 CONDITIONS DE BATAILLE</div>
+    <div class="mg-result">
+      <span style="font-size:1.4rem">${cond.icon}</span><strong> ${cond.name}</strong><br>
+      <span style="color:var(--text2)">${cond.desc}</span><br><br>
+      <span class="tag tag-battle">${condType.type}</span>
+    </div>
+  </div>
+  <div class="mg-card">
+    <div class="mg-card-title">${bm?'🪐':'🌦️'} MÉTÉO ${biome?`— ${bm.e} ${bm.label.toUpperCase()}`:'ALÉATOIRE'}</div>
+    <div class="mg-result">
+      <span style="font-size:1.4rem">${weather.icon}</span> <strong>${weather.name}</strong><br>
+      <span style="color:var(--text2)">Planète ${weather.biome}</span><br><br>
+      <span class="tag tag-weather">${weather.emoji} ${weather.biome}</span>
+    </div>
+  </div>
+  <div class="mg-card mg-full">
+    <div class="mg-card-title">🎯 SIDE-MISSIONS (1 par camp)</div>
+    <div class="mg-result" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+      <div>
+        <span class="tag tag-side">Combat Mastery</span><br>
+        <strong style="font-size:.78rem">${sm_combat.name}</strong><br>
+        <span style="color:var(--text2);font-size:.72rem">${sm_combat.desc}</span>
+      </div>
+      <div>
+        <span class="tag tag-side">Tactical Genius</span><br>
+        <strong style="font-size:.78rem">${sm_tactical.name}</strong><br>
+        <span style="color:var(--text2);font-size:.72rem">${sm_tactical.desc}</span>
+      </div>
+      <div>
+        <span class="tag tag-side">Heroic Intervention</span><br>
+        <strong style="font-size:.78rem">${sm_heroic.name}</strong><br>
+        <span style="color:var(--text2);font-size:.72rem">${sm_heroic.desc}</span>
+      </div>
+    </div>
+  </div>
+  ${selectedEvents.length?`<div class="mg-card mg-full">
+    <div class="mg-card-title">🎲 ÉVÉNEMENTS ALÉATOIRES (Round 1+)</div>
+    <div class="mg-result" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      ${selectedEvents.map(ev=>`<div><span style="font-size:1.2rem">${ev.icon}</span> <strong>${ev.name}</strong><br><span style="color:var(--text2);font-size:.72rem">${ev.desc}</span><br><span class="tag tag-event">Déclenché sur 5+</span></div>`).join('')}
+    </div>
+  </div>`:``}
+  <div class="mg-card mg-full" style="background:rgba(0,212,255,.04);border-color:rgba(0,212,255,.2)">
+    <div class="mg-card-title" style="color:var(--glow)">📋 RÉSUMÉ DE PARTIE</div>
+    <div class="mg-result">
+      <span class="tag tag-mission">Mission: ${mission.name}</span>
+      <span class="tag tag-deploy">Déploiement: ${deploy.name}</span>
+      <span class="tag tag-battle">Condition: ${cond.name}</span>
+      <span class="tag tag-weather">Météo: ${weather.name}</span>
+      <span class="tag tag-side">SM Combat: ${sm_combat.name}</span>
+      <span class="tag tag-side">SM Tactique: ${sm_tactical.name}</span>
+      <span class="tag tag-side">SM Héroïque: ${sm_heroic.name}</span>
+    </div>
+  </div>`;
+  document.getElementById('mg-body').innerHTML=html;
+  addLog(`Tour ${S.turn} — Mission générée : <strong>${mission.name}</strong> · ${deploy.name} · Météo: ${weather.name}`);
+  renderLog();
+};
+
+// ════════════════════════════════════════════════════
+// PLAYERS / FLEETS / ARMIES
+// ════════════════════════════════════════════════════
+function renderPlayers(){
+  const el=document.getElementById('players-list');
+  if(!S.players.length){el.innerHTML=`<div style="color:var(--text3);font-size:.72rem;text-align:center;padding:12px">Aucun joueur.</div>`;return;}
+  el.innerHTML=S.players.map(p=>{
+    const sys=S.systems.filter(s=>s.planets.some(pl=>pl.owner===p.id)).length;
+    const pln=S.systems.flatMap(s=>s.planets).filter(pl=>pl.owner===p.id).length;
+    const fl=S.fleets.filter(f=>f.playerId===p.id).length;
+    const vp=p.vp||0;
+    const canEdit=isAdmin();
+    return`<div class="pc">
+      <div class="pch">
+        <div class="pdot" style="background:${p.color};color:${p.color}"></div>
+        <div class="pn" style="color:${p.color}">${p.name}</div>
+        ${canEdit?`<button class="btn btn-d btn-ic btn-sm" onclick="removePlayer('${p.id}')">✕</button>`:''}
+      </div>
+      <div class="sr" style="grid-template-columns:1fr 1fr 1fr 1fr">
+        <div class="sb"><div class="sv2" style="color:${p.color}">${sys}</div><div class="sl">SYS</div></div>
+        <div class="sb"><div class="sv2" style="color:${p.color}">${pln}</div><div class="sl">PLN</div></div>
+        <div class="sb"><div class="sv2" style="color:${p.color}">${fl}</div><div class="sl">FLT</div></div>
+        <div class="sb" style="position:relative">
+          <div class="sv2" style="color:var(--gold)" id="vp-${p.id}">${vp}</div>
+          <div class="sl">VP</div>
+          ${canEdit?`<div style="display:flex;gap:2px;margin-top:3px;justify-content:center">
+            <button onclick="changeVP('${p.id}',-1)" style="background:none;border:1px solid var(--border);border-radius:2px;color:var(--text3);cursor:pointer;font-size:.6rem;padding:0 4px;line-height:1.4">−</button>
+            <button onclick="changeVP('${p.id}',1)" style="background:none;border:1px solid var(--border);border-radius:2px;color:var(--text3);cursor:pointer;font-size:.6rem;padding:0 4px;line-height:1.4">+</button>
+          </div>`:''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+window.addPlayer=function(){
+  const name=document.getElementById('np-name').value.trim(),color=document.getElementById('np-color').value;
+  if(!name)return toast('⚠️ Nom requis');
+  S.players.push({id:'pl'+Date.now(),name,color,vp:0});
+  document.getElementById('np-name').value='';closeM('m-add-player');saveS();renderAll();toast('✅ Joueur ajouté');
+};
+window.removePlayer=function(id){S.players=S.players.filter(p=>p.id!==id);saveS();renderAll();};
+window.changeVP=function(pid,delta){
+  const p=S.players.find(q=>q.id===pid);if(!p)return;
+  p.vp=Math.max(0,(p.vp||0)+delta);
+  addLog(`Tour ${S.turn} — <span style="color:${p.color}">${p.name}</span> : ${delta>0?'+'+delta:delta} VP → <strong style="color:var(--gold)">${p.vp} VP</strong>`);
+  saveS();renderPlayers();renderLog();toast(`${p.name} : ${p.vp} VP`);
+};
+window.editTurn=function(){
+  if(!isAdmin())return;
+  const cur=S.turn;
+  const val=prompt(`Modifier le tour (actuel: ${cur})`,cur);
+  if(val===null)return;
+  const n=parseInt(val);
+  if(isNaN(n)||n<1)return toast('⚠️ Numéro de tour invalide');
+  S.turn=n;
+  document.getElementById('turn-num').textContent=n;
+  addLog(`⚙️ Tour modifié → <strong>${n}</strong> (admin)`);
+  saveS();renderLog();toast(`▶ Tour ${n}`);
+};
+
+function renderFleets(){
+  const el=document.getElementById('fleets-list');
+  if(!S.fleets.length){el.innerHTML=`<div style="color:var(--text3);font-size:.72rem;text-align:center;padding:12px">Aucune flotte.</div>`;return;}
+  el.innerHTML=S.fleets.map(f=>{
+    const p=S.players.find(pl=>pl.id===f.playerId),fc=p?p.color:'#4a6a8a';
+    const sys=S.systems.find(s=>s.id===f.systemId);
+    const pln=sys?.planets.find(pl=>pl.id===f.planetId);
+    const loc=pln?pln.name:(f.systemId?'Jumpgate':'—');
+    const can=isAdmin()||S.session.playerId===f.playerId;
+    return`<div class="fr ${selFleet?.id===f.id?'sel':''}" onclick="selF('${f.id}')">
+      <div class="sdot s-${f.status}"></div>
+      <div style="flex:1"><div style="color:${fc};font-size:.74rem;font-weight:600">${f.name}</div><div style="font-size:.6rem;color:var(--text3)">${p?p.name:'?'} · ${sys?sys.name:'?'} · ${loc}</div></div>
+      ${can?`<button class="btn btn-a btn-sm btn-ic" onclick="event.stopPropagation();startMove('${f.id}')" title="Déplacer">↗</button>`:''}
+      ${isAdmin()?`<button class="btn btn-d btn-sm btn-ic" onclick="event.stopPropagation();removeFleet('${f.id}')">✕</button>`:''}
+    </div>`;
+  }).join('');
+}
+window.selF=function(id){selFleet=S.fleets.find(f=>f.id===id)||null;renderFleets();};
+window.addFleet=function(){
+  const name=document.getElementById('nf-name').value.trim(),pid=document.getElementById('nf-player').value,sid=document.getElementById('nf-sys').value,plid=document.getElementById('nf-planet').value||null;
+  if(!name||!pid||!sid)return toast('⚠️ Tous les champs requis');
+  S.fleets.push({id:'f'+Date.now(),name,playerId:pid,systemId:sid,planetId:plid,status:'orbit'});
+  document.getElementById('nf-name').value='';closeM('m-add-fleet');saveS();renderAll();drawGal();if(curSysId)drawSys();toast('✅ Flotte déployée');
+};
+window.removeFleet=function(id){S.fleets=S.fleets.filter(f=>f.id!==id);if(selFleet?.id===id)selFleet=null;saveS();renderAll();drawGal();if(curSysId)drawSys();};
+
+function renderArmies(){
+  const el=document.getElementById('armies-list');
+  const list=isAdmin()?S.armies:S.armies.filter(a=>a.playerId===S.session.playerId);
+  if(!list.length){el.innerHTML=`<div style="color:var(--text3);font-size:.72rem;text-align:center;padding:12px">Aucune liste.</div>`;return;}
+  el.innerHTML=list.map(a=>{const p=S.players.find(pl=>pl.id===a.playerId),fc=p?p.color:'#4a6a8a';
+    const unitCount=a.parsedUnits?a.parsedUnits.length:(a.units?a.units.split('\n').filter(Boolean).length:0);
+    return`<div class="ab">
+      <div class="ah">
+        <div class="pdot" style="background:${fc};color:${fc};width:8px;height:8px"></div>
+        <div class="an" style="color:${fc}">${a.name}</div>
+        <div class="ap2">${a.pts||'?'}pts</div>
+        <button class="btn btn-p btn-sm btn-ic" onclick="viewArmy('${a.id}')" title="Voir la liste">👁️</button>
+        ${(isAdmin()||S.session.playerId===a.playerId)?`<button class="btn btn-d btn-sm btn-ic" onclick="removeArmy('${a.id}')">✕</button>`:''}
+      </div>
+      <div style="font-size:.65rem;color:var(--text3)">${p?p.name:''} · ${unitCount} unité(s)</div>
+    </div>`;
+  }).join('');
+}
+window.addArmy=function(){
+  const manualVisible=document.getElementById('army-tab-manual').style.display!=='none';
+  let army={id:'a'+Date.now(),parsedUnits:null};
+  if(!manualVisible&&_pendingArmy?.source==='txt'){
+    // TXT import
+    const pid=document.getElementById('na-player-txt').value;
+    if(!pid)return toast('⚠️ Sélectionner un joueur');
+    army.name=_pendingArmy.name;army.playerId=pid;army.pts=_pendingArmy.pts;
+    army.units=unitsToDisplay(_pendingArmy.units);
+    army.parsedUnits=_pendingArmy.units;army.notes='';
+  }else{
+    // Manual
+    const name=document.getElementById('na-name').value.trim();
+    const pid=document.getElementById('na-player').value;
+    if(!name||!pid)return toast('⚠️ Nom et joueur requis');
+    army.name=name;army.playerId=pid;army.pts=document.getElementById('na-pts').value;
+    army.units=document.getElementById('na-units').value.trim();
+    army.notes=document.getElementById('na-notes').value.trim();
+  }
+  S.armies.push(army);
+  ['na-name','na-pts','na-units','na-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  _pendingArmy=null;
+  const prev=document.getElementById('na-txt-preview');if(prev)prev.style.display='none';
+  closeM('m-add-army');saveS();renderArmies();toast('✅ Liste sauvegardée');
+};
+window.removeArmy=function(id){S.armies=S.armies.filter(a=>a.id!==id);saveS();renderArmies();};
+
+// ════════════════════════════════════════════════════
+// BATTLE / LOG / TURNS
+// ════════════════════════════════════════════════════
+window.openM=function(id){
+  if(id==='m-add-fleet'){
+    document.getElementById('nf-player').innerHTML=S.players.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+    const sysSel=document.getElementById('nf-sys');sysSel.innerHTML=S.systems.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+    const updatePlanets=()=>{const sid=sysSel.value;const sys=S.systems.find(s=>s.id===sid);document.getElementById('nf-planet').innerHTML=`<option value="">Station Jumpgate</option>`+(sys?sys.planets.map(p=>`<option value="${p.id}">${p.name}</option>`).join(''):'');};
+    sysSel.onchange=updatePlanets;updatePlanets();
+  }
+  if(id==='m-add-army'){
+    const opts=S.players.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+    ['na-player','na-player-txt'].forEach(sid=>{const el=document.getElementById(sid);if(el)el.innerHTML=opts;});
+    // Reset to manual tab if opening fresh
+    if(!_pendingArmy)armyTab('manual');
+  }
+  if(id==='m-battle'){document.getElementById('btl-win').innerHTML=S.players.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');document.getElementById('btl-los').innerHTML=`<option value="">Aucun</option>`+S.players.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');}
+  if(id==='m-session'){
+    document.getElementById('ses-player').innerHTML=`<option value="">— Spectateur —</option>`+S.players.map(p=>`<option value="${p.id}" ${S.session.playerId===p.id?'selected':''}>${p.name}</option>`).join('');
+    document.getElementById('ses-mode').value=S.session.mode;
+    document.getElementById('ses-pwd').value='';
+    document.getElementById('ses-error').style.display='none';
+    toggleAdminPwd(S.session.mode);
+  }
+  if(id==='m-edit-sys'&&curSysId){const sys=S.systems.find(s=>s.id===curSysId);if(sys){document.getElementById('es-id').value=curSysId;document.getElementById('es-name').value=sys.name;}}  document.getElementById(id).classList.add('open');
+};
+window.closeM=function(id){document.getElementById(id).classList.remove('open');};
+window.saveBattle=function(){
+  const win=S.players.find(p=>p.id===document.getElementById('btl-win').value);if(!win)return toast('⚠️ Vainqueur requis');
+  const los=S.players.find(p=>p.id===document.getElementById('btl-los').value);
+  const res=document.getElementById('btl-res').value,loc=document.getElementById('btl-loc').value,notes=document.getElementById('btl-notes').value;
+  let html=`⚔️ <strong style="color:${win.color}">${win.name}</strong> remporte à <strong>${loc}</strong>`;
+  if(los)html+=` vs <strong style="color:${los.color}">${los.name}</strong>`;
+  if(res==='capture')html+=` — Planète conquise!`;if(res==='system')html+=` — Système contrôlé!`;
+  if(notes)html+=`<br><em style="color:var(--text3)">${notes}</em>`;
+  addLog(html,'v');S.fleets.filter(f=>f.status==='battle').forEach(f=>f.status='orbit');
+  document.getElementById('btl-notes').value='';closeM('m-battle');saveS();renderAll();toast('⚔️ Bataille enregistrée');
+};
+function addLog(html,type=''){S.log.unshift({html,type,turn:S.turn});if(S.log.length>60)S.log.pop();renderLog();}
+function renderLog(){
+  const el=document.getElementById('battle-log');
+  if(!S.log.length){el.innerHTML=`<div style="color:var(--text3);font-size:.7rem;text-align:center;padding:8px">Aucun événement.</div>`;return;}
+  el.innerHTML=S.log.map(e=>`<div class="le ${e.type}"><div class="lt">TOUR ${e.turn}</div><div>${e.html}</div></div>`).join('');
+}
+window.nextTurn=function(){if(!isAdmin())return toast('⚠️ Admin uniquement');S.turn++;document.getElementById('turn-num').textContent=S.turn;S.fleets.forEach(f=>{if(f.status==='moving')f.status='orbit';});addLog(`🔄 <strong>Tour ${S.turn}</strong> commence`);saveS();renderAll();toast(`▶ Tour ${S.turn}`);};
+window.toggleAdminPwd=function(mode){
+  document.getElementById('ses-pwd-row').style.display=mode==='admin'?'block':'none';
+  document.getElementById('ses-error').style.display='none';
+};
+window.setSession=function(){
+  const mode=document.getElementById('ses-mode').value;
+  const pid=document.getElementById('ses-player').value||null;
+  const errEl=document.getElementById('ses-error');
+  errEl.style.display='none';
+  // Check admin password if one is set
+  if(mode==='admin'&&S.adminPassword){
+    const entered=document.getElementById('ses-pwd').value;
+    if(entered!==S.adminPassword){errEl.style.display='block';return;}
+  }
+  // If switching TO admin mode and no password set yet, optionally save new password
+  if(mode==='admin'&&!S.adminPassword){
+    const newPwd=document.getElementById('ses-pwd').value;
+    if(newPwd){S.adminPassword=newPwd;toast('🔒 Mot de passe admin défini');}
+  }
+  S.session={mode,playerId:pid};
+  const pl=document.getElementById('mpill');
+  if(mode==='admin'){pl.className='pill adm';pl.textContent='ADMIN';}
+  else{const p=S.players.find(q=>q.id===pid);pl.className='pill ply';pl.textContent=p?p.name.toUpperCase():'JOUEUR';}
+  closeM('m-session');renderAll();toast(`✅ Session : ${mode==='admin'?'Admin':'Joueur'}`);
+};
+function isAdmin(){return S.session.mode==='admin';}
+
+// ════════════════════════════════════════════════════
+// MAP EDITOR
+// ════════════════════════════════════════════════════
+window.openMapEd=function(){
+  document.getElementById('map-json').value=JSON.stringify(S.systems.map(s=>({id:s.id,name:s.name,x:s.x,y:s.y,connections:s.connections,
+    planetConnections:s.planetConnections||[],
+    planets:s.planets.map(p=>({id:p.id,name:p.name,biome:p.biome||'dead',resources:p.resources,pos:p.pos||{x:.5,y:.5}}))})),null,2);
+  openM('m-map-json');
+};
+window.applyJson=function(){
+  try{const data=JSON.parse(document.getElementById('map-json').value);
+    data.forEach(ns=>{const ex=S.systems.find(s=>s.id===ns.id);ns.owner=ex?ex.owner:null;ns.planetConnections=ns.planetConnections||[];
+      ns.planets=(ns.planets||[]).map(np=>{const ep=ex?.planets.find(p=>p.id===np.id);return{...np,owner:ep?ep.owner:null,customImage:ep?.customImage||null,pos:np.pos||{x:.5,y:.5}};});});
+    S.systems=data;closeM('m-map-json');saveS();drawGal();toast('✅ Carte mise à jour');
+  }catch(e){toast('❌ JSON invalide');}
+};
+window.saveSysEdit=function(){
+  const id=document.getElementById('es-id').value,sys=S.systems.find(s=>s.id===id);if(!sys)return;
+  sys.name=document.getElementById('es-name').value.trim()||sys.name;
+  closeM('m-edit-sys');saveS();drawGal();if(curSysId)drawSys();toast('✅ Système mis à jour');
+};
+window.addPlanet=function(){}; // Deprecated — use addPlanetRandom button in sys view
+
+// ════════════════════════════════════════════════════
+// FIREBASE
+// ════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════
+// FIREBASE & LOBBY
+// ════════════════════════════════════════════════════
+
+const ADMIN_PASSWORD='admin2026'; // Modifier ici pour changer le mot de passe admin
+
+let db=null,fbApp=null,currentCampaignId=null,currentCampaignName=null,_isLobbyAdmin=false;
+let _pendingJoinId=null,_pendingJoinName=null;
+let _fbRef,_fbSet,_fbGet,_fbOnValue,_fbRemove;
+
+function simpleHash(str){let h=0;for(let i=0;i<str.length;i++){h=Math.imul(31,h)+str.charCodeAt(i)|0;}return h.toString(36);}
+function getFB(){return{ref:_fbRef,set:_fbSet,get:_fbGet,onValue:_fbOnValue,remove:_fbRemove};}
+function normalizeFirebaseUrl(url){
+  let v=(url||'').trim();
+  if(!v)return'';
+  if(!/^https?:\/\//i.test(v))v='https://'+v;
+  v=v.replace(/\/+$/,'');
+  if(v.includes('firebaseio.com')&&!v.includes('firebasedatabase.app')){
+    const m=v.match(/^https?:\/\/([^.]+)-default-rtdb(?:\.[^.]+)?\.firebaseio\.com$/i);
+    if(m)v='https://'+m[1]+'-default-rtdb.europe-west1.firebasedatabase.app';
+  }
+  return v;
+}
+
+// ── ÉTAPE 1 : Connexion Firebase (formulaire manuel) ──
+window.lobConnectFB=async function(){
+  const btn=document.getElementById('lob-connect-btn');
+  const ak=document.getElementById('lob-ak').value.trim();
+  const ad=document.getElementById('lob-ad').value.trim();
+  const du=normalizeFirebaseUrl(document.getElementById('lob-du').value);
+  const pi=document.getElementById('lob-pi').value.trim();
+  if(!du){lobFbErr('Database URL requise');return;}
+  document.getElementById('lob-du').value=du;
+  lobFbErr('');
+  btn.disabled=true;
+  btn.textContent='Connexion...';
+  try{
+    const{initializeApp,getApps}=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
+    const fbdb=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
+    const cfg={apiKey:ak,authDomain:ad,databaseURL:du,projectId:pi};
+    try{localStorage.setItem('opr-fbcfg',JSON.stringify(cfg));}catch(e){}
+    const ex=getApps().find(a=>a.name==='opr');
+    fbApp=ex||initializeApp(cfg,'opr');
+    db=fbdb.getDatabase(fbApp);
+    _fbRef=fbdb.ref;_fbSet=fbdb.set;_fbGet=fbdb.get;_fbOnValue=fbdb.onValue;_fbRemove=fbdb.remove;
+
+    await fbdb.get(fbdb.ref(db,'meta/campaigns'));
+    const testRef=fbdb.ref(db,'_connection_test');
+    await fbdb.set(testRef,{ts:Date.now(),ok:true});
+    await fbdb.remove(testRef);
+
+    document.getElementById('lob-step1').style.display='none';
+    document.getElementById('lob-step2').style.display='block';
+    await lobRefresh();
+    btn.disabled=false;
+    btn.textContent='⚡ CONNECTER À FIREBASE';
+  }catch(e){
+    lobFbErr('❌ '+(e?.message||e));
+    btn.disabled=false;
+    btn.textContent='⚡ CONNECTER À FIREBASE';
+    console.error('Firebase connect error:',e);
+  }
+};
+function lobFbErr(msg){
+  const el=document.getElementById('lob-fb-err2');
+  if(el){el.textContent=msg;el.style.display=msg?'block':'none';}
+}
+
+// ── ÉTAPE 2 : Liste des campagnes ──
+async function lobRefresh(){
+  const listEl=document.getElementById('lob-list');
+  listEl.innerHTML='<div style="text-align:center;padding:12px;color:var(--text3);font-size:.72rem">Chargement...</div>';
+  try{
+    const{ref,get}=getFB();
+    const snap=await get(ref(db,'meta/campaigns'));
+    const camps=snap.val()||{};
+    const keys=Object.keys(camps);
+    if(!keys.length){
+      listEl.innerHTML='<div style="text-align:center;padding:16px;color:var(--text3);font-size:.72rem">Aucune campagne — créez-en une ci-dessous.</div>';
+    }else{
+      listEl.innerHTML=keys.map(k=>{
+        const c=camps[k];
+        const hasPwd=!!c.passwordHash;
+        const safeName=c.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        return'<div style="padding:10px 12px;background:var(--deep);border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;gap:8px;">'+
+          '<div style="flex:1">'+
+            '<div style="font-family:Orbitron,monospace;font-size:.72rem;font-weight:600;color:var(--text)">'+c.name+'</div>'+
+            '<div style="font-family:monospace;font-size:.58rem;color:var(--text3)">'+(hasPwd?'🔒 Protégée':'🔓 Ouverte')+'</div>'+
+          '</div>'+
+          '<button onclick="lobSelect(\''+k+'\',\''+safeName+'\','+hasPwd+')" class="btn btn-p btn-sm">▶ REJOINDRE</button>'+
+          (_isLobbyAdmin?'<button onclick="lobDelete(\''+k+'\',\''+safeName+'\')" class="btn btn-d btn-sm btn-ic" title="Supprimer">🗑️</button>':'')+
+        '</div>';
+      }).join('');
+    }
+  }catch(e){
+    listEl.innerHTML='<div style="color:var(--red);font-size:.72rem;padding:8px">❌ '+e.message+'</div>';
+    console.error('lobRefresh:',e);
+  }
+}
+
+// Sélectionner une campagne
+window.lobSelect=function(id,name,hasPwd){
+  document.getElementById('lob-join-err').style.display='none';
+  if(!hasPwd){lobEnter(id,name);return;}
+  _pendingJoinId=id;_pendingJoinName=name;
+  document.getElementById('lob-join-name').textContent='🔒 '+name;
+  document.getElementById('lob-join-pwd').value='';
+  document.getElementById('lob-join-box').style.display='block';
+  setTimeout(()=>document.getElementById('lob-join-pwd').focus(),50);
+};
+window.lobCancelJoin=function(){
+  document.getElementById('lob-join-box').style.display='none';
+  _pendingJoinId=null;
+};
+window.lobJoin=async function(){
+  const pwd=document.getElementById('lob-join-pwd').value;
+  const errEl=document.getElementById('lob-join-err');
+  errEl.style.display='none';
+  try{
+    const{ref,get}=getFB();
+    const snap=await get(ref(db,'meta/campaigns/'+_pendingJoinId));
+    const camp=snap.val();
+    if(!camp){errEl.textContent='❌ Campagne introuvable';errEl.style.display='block';return;}
+    if(camp.passwordHash&&simpleHash(pwd)!==camp.passwordHash){
+      errEl.textContent='❌ Mot de passe incorrect';errEl.style.display='block';
+      document.getElementById('lob-join-pwd').value='';return;
+    }
+    lobEnter(_pendingJoinId,camp.name);
+  }catch(e){errEl.textContent='❌ '+e.message;errEl.style.display='block';}
+};
+
+// Login admin (mot de passe hardcodé)
+window.lobAdminLogin=function(){
+  const pwd=document.getElementById('lob-admin-pwd').value;
+  const errEl=document.getElementById('lob-admin-err');
+  errEl.style.display='none';
+  if(pwd!==ADMIN_PASSWORD){
+    errEl.textContent='❌ Mot de passe admin incorrect';errEl.style.display='block';
+    document.getElementById('lob-admin-pwd').value='';return;
+  }
+  _isLobbyAdmin=true;
+  document.getElementById('lob-admin-locked').style.display='none';
+  document.getElementById('lob-admin-form').style.display='block';
+  lobRefresh();
+};
+
+// Créer une campagne
+window.lobCreate=async function(){
+  const name=document.getElementById('lob-new-name').value.trim();
+  const pwd=document.getElementById('lob-new-pwd').value;
+  if(!name){toast('⚠️ Nom requis');return;}
+  if(!db){toast('❌ Firebase non connecté');return;}
+  const id=name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,30)+'-'+Date.now().toString(36);
+  try{
+    const{ref,set}=getFB();
+    await set(ref(db,'meta/campaigns/'+id),{name,createdAt:new Date().toISOString(),passwordHash:pwd?simpleHash(pwd):null});
+    document.getElementById('lob-new-name').value='';
+    document.getElementById('lob-new-pwd').value='';
+    toast('✅ Campagne "'+name+'" créée !');
+    await lobRefresh();
+  }catch(e){
+    toast('❌ Création impossible : '+(e?.message||e));
+    console.error('lobCreate error:',e);
+  }
+};
+
+// Supprimer une campagne
+window.lobDelete=async function(id,name){
+  if(!confirm('Supprimer "'+name+'" et toutes ses données ?'))return;
+  try{
+    const{ref,remove}=getFB();
+    await remove(ref(db,'campaigns/'+id));
+    await remove(ref(db,'meta/campaigns/'+id));
+    toast('🗑️ Campagne supprimée');
+    lobRefresh();
+  }catch(e){toast('❌ '+e.message);}
+};
+
+// Entrer dans une campagne
+async function lobEnter(id,name){
+  currentCampaignId=id;currentCampaignName=name;
+  document.getElementById('lob-join-box').style.display='none';
+  const{ref,onValue,get}=getFB();
+  // Sync temps réel
+  onValue(ref(db,'campaigns/'+id),snap=>{
+    const d=snap.val();
+    if(d){S={...S,...d,session:S.session,adminPassword:S.adminPassword};
+      document.getElementById('turn-num').textContent=S.turn;
+      renderAll();drawGal();if(curSysId)drawSys();}
+  });
+  document.getElementById('fbd').classList.add('on');
+  document.getElementById('fbl').textContent=name.length>12?name.slice(0,12)+'…':name;
+  document.getElementById('lobby').style.display='none';
+  // Init si vide
+  const snap=await get(ref(db,'campaigns/'+id+'/systems'));
+  if(!snap.val()){
+    if(!S.systems||!S.systems.length)S.systems=JSON.parse(JSON.stringify(defSys));
+    await saveS();
+  }
+  resizeGal();renderAll();
+  addLog('🚀 Campagne "'+name+'" chargée');
+}
+
+// Changer de campagne
+window.lobbyDisconnect=function(){
+  closeM('m-firebase');
+  currentCampaignId=null;currentCampaignName=null;_isLobbyAdmin=false;
+  S={turn:1,players:[],fleets:[],armies:[],systems:[],log:[],session:{mode:'admin',playerId:null},adminPassword:S.adminPassword};
+  document.getElementById('fbd').classList.remove('on');
+  document.getElementById('fbl').textContent='LOCAL';
+  document.getElementById('lob-admin-locked').style.display='block';
+  document.getElementById('lob-admin-form').style.display='none';
+  document.getElementById('lob-admin-pwd').value='';
+  document.getElementById('lob-join-box').style.display='none';
+  document.getElementById('lobby').style.display='flex';
+  lobRefresh();
+};
+
+// Bouton Firebase dans le header
+window.openFBStatus=function(){
+  const el=document.getElementById('fb-status-detail');
+  if(currentCampaignId){
+    el.innerHTML='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div style="width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green)"></div><span style="color:var(--green);font-family:Share Tech Mono,monospace;font-size:.7rem">SYNCHRONISÉ</span></div><div style="color:var(--text3);font-size:.72rem">Campagne :</div><div style="color:var(--glow);font-family:Orbitron,monospace;font-size:.8rem;margin:4px 0">'+currentCampaignName+'</div>';
+  }else{
+    el.innerHTML='<div style="color:var(--text3);font-size:.75rem">Non connecté à une campagne.</div>';
+  }
+  openM('m-firebase');
+};
+
+async function saveS(){
+  if(!db||!currentCampaignId)return;
+  const data={turn:S.turn,players:S.players,fleets:S.fleets,armies:S.armies,systems:S.systems,log:S.log};
+  try{const{ref,set}=getFB();await set(ref(db,'campaigns/'+currentCampaignId),data);}
+  catch(e){console.error('saveS:',e);}
+}
+
+function loadLocal(){
+  try{S.adminPassword=localStorage.getItem('opr-v3-adminpwd')||'';}catch(e){}
+}
+
+// Stubs legacy
+window.lobbyEnter=function(){};
+window.lobbySetPwd=function(){};
+
+
+
+// ════════════════════════════════════════════════════
+// ARMY IMPORT — TXT & JSON PARSERS
+// ════════════════════════════════════════════════════
+// State for pending import
+let _pendingArmy=null;
+
+window.armyTab=function(tab){
+  ['manual','txt','json'].forEach(t=>{
+    document.getElementById('army-tab-'+t).style.display=t===tab?'block':'none';
+    const btn=document.getElementById('at-'+t);
+    if(btn){btn.style.background=t===tab?'rgba(0,212,255,.1)':'none';btn.style.color=t===tab?'var(--glow)':'var(--text3)';}
+  });
+  _pendingArmy=null;
+};
+
+// Parse Army Forge .txt export
+function parseTxtArmy(txt){
+  const lines=txt.split('\n').map(l=>l.trim());
+  let name='Armée importée',pts=0,units=[];
+
+  // Header: ++ Name (vX.X) [GF Xpts] [Y Units] ++
+  const hdrLine=lines.find(l=>l.startsWith('++'));
+  if(hdrLine){
+    const m=hdrLine.match(/\+\+\s*(.+?)\s*\[GF\s+(\d+)pts\]/i)||hdrLine.match(/\+\+\s*(.+?)\s*\[[\w\s]*(\d+)pts\]/i);
+    if(m){name=m[1].replace(/\s*-\s*[\w\s]+\(v[\d.]+\)\s*$/, '').trim();pts=parseInt(m[2]);}
+  }
+
+  // Parse into raw blocks separated by blank lines
+  const blocks=[];
+  let cur=[];
+  for(const l of lines){
+    if(!l){if(cur.length){blocks.push(cur);cur=[];}continue;}
+    if(l.startsWith('++'))continue;
+    cur.push(l);
+  }
+  if(cur.length)blocks.push(cur);
+
+  // Parse each block into a unit
+  function parseBlock(bl){
+    const hdr=bl[0];
+    const um=hdr.match(/^(.+?)\s*\[(\d+)\]\s+Q(\d+)\+\s+D(\d+)\+\s*\|\s*(\d+)pts(?:\s*\|\s*(.*))?$/);
+    if(!um)return null;
+    const unit={
+      name:um[1].trim(),count:parseInt(um[2]),
+      quality:`Q${um[3]}+`,defense:`D${um[4]}+`,
+      pts:parseInt(um[5]),rules:[],weapons:[],joinedTo:null
+    };
+    if(um[6])unit.rules=um[6].split(',').map(r=>r.trim()).filter(Boolean);
+    for(let i=1;i<bl.length;i++){
+      const wl=bl[i];
+      if(wl.startsWith('| Joined to:')){unit.joinedTo=wl.replace('| Joined to:','').trim();continue;}
+      const wps=splitWeapons(wl);
+      if(wps.length)unit.weapons.push(...wps);
+    }
+    return unit;
+  }
+
+  // First pass: parse all blocks
+  const rawUnits=blocks.map(parseBlock).filter(Boolean);
+
+  // Second pass: handle "Joined to" — the LEADER block is followed by its unit
+  // In Army Forge TXT, the hero appears BEFORE the unit it joins, with "| Joined to: UnitName"
+  // We keep them separate but mark the relationship clearly
+  for(const u of rawUnits){
+    if(u.joinedTo){
+      // Find the target unit by name
+      const target=rawUnits.find(x=>x.name===u.joinedTo&&x!==u);
+      if(target)u.joinedToUnit=target;
+    }
+    units.push(u);
+  }
+
+  return{name,pts,units};
+}
+
+function splitWeapons(str){
+  const weapons=[];let depth=0,cur='';
+  for(let i=0;i<str.length;i++){
+    const ch=str[i];
+    if(ch==='(')depth++;else if(ch===')')depth--;
+    if(ch===','&&depth===0){const w=cur.trim();if(w)weapons.push(w);cur='';}
+    else cur+=ch;
+  }
+  if(cur.trim())weapons.push(cur.trim());
+  return weapons.filter(w=>w.length>2);
+}
+
+window.previewTxtArmy=function(){
+  const txt=document.getElementById('na-txt-content').value.trim();
+  if(!txt){toast('⚠️ Coller du texte d\'abord');return;}
+  _pendingArmy=parseTxtArmy(txt);
+  _pendingArmy.source='txt';
+  showArmyPreview(_pendingArmy,'na-txt-preview');
+};
+
+function showArmyPreview(army,elId){
+  const el=document.getElementById(elId);if(!el)return;
+  el.style.display='block';
+  let html=`<div style="font-family:'Orbitron';font-size:.72rem;color:var(--glow);margin-bottom:6px">${army.name} — ${army.pts}pts</div>`;
+  html+=`<div style="font-size:.68rem;color:var(--text2);margin-bottom:8px">${army.units.length} unité(s) détectée(s)</div>`;
+  army.units.slice(0,6).forEach(u=>{
+    html+=`<div style="padding:4px 0;border-bottom:1px solid var(--border);font-size:.7rem;display:flex;justify-content:space-between;">
+      <span style="color:var(--text)">${u.count>1?`<span style="color:var(--text3)">${u.count}x</span> `:''}<strong>${u.name}</strong>${u.joinedTo?` <span style="color:var(--text3);font-size:.6rem">↳ ${u.joinedTo}</span>`:''}</span>
+      ${u.pts?`<span style="color:var(--gold)">${u.pts}pts</span>`:''}
+    </div>`;
+  });
+  if(army.units.length>6)html+=`<div style="color:var(--text3);font-size:.63rem;margin-top:4px">... et ${army.units.length-6} unité(s) de plus</div>`;
+  el.innerHTML=html;
+}
+
+// Format units array to display string
+function unitsToDisplay(units){
+  return units.map(u=>{
+    let line=`${u.count>1?u.count+'x ':''}${u.name}${u.pts?' ['+u.pts+'pts]':''}`;
+    if(u.weapons&&u.weapons.length)line+='\n  '+u.weapons.join('\n  ');
+    if(u.joinedTo)line+=`\n  ↳ Rejoint: ${u.joinedTo}`;
+    return line;
+  }).join('\n\n');
+}
+
+// ════════════════════════════════════════════════════
+// ARMY VIEWER
+// ════════════════════════════════════════════════════
+window.viewArmy=function(id){
+  const a=S.armies.find(x=>x.id===id);if(!a)return;
+  const p=S.players.find(pl=>pl.id===a.playerId),fc=p?p.color:'#4a6a8a';
+  document.getElementById('varm-title').innerHTML=`<span style="color:${fc}">${a.name}</span> <span style="color:var(--gold);font-size:.75rem">${a.pts||'?'}pts</span>`;
+  let html='';
+
+  if(a.parsedUnits&&a.parsedUnits.length){
+    const hasTxtStats=a.parsedUnits[0]?.quality&&a.parsedUnits[0].quality!=='?';
+    const totalPts=a.parsedUnits.reduce((s,u)=>s+(u.pts||0),0);
+
+    // Header badges
+    html+=`<div style="margin-bottom:12px;display:flex;gap:7px;flex-wrap:wrap;align-items:center">
+      <span style="font-family:'Share Tech Mono';font-size:.62rem;padding:3px 8px;background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.2);border-radius:3px;color:var(--glow)">${a.parsedUnits.length} unités</span>
+      <span style="font-family:'Share Tech Mono';font-size:.62rem;padding:3px 8px;background:rgba(255,215,0,.08);border:1px solid rgba(255,215,0,.2);border-radius:3px;color:var(--gold)">${totalPts||a.pts}pts</span>
+      ${p?`<span style="font-family:'Share Tech Mono';font-size:.62rem;padding:3px 8px;background:${fc}18;border:1px solid ${fc}44;border-radius:3px;color:${fc}">${p.name}</span>`:''}
+      ${!hasTxtStats?`<span style="font-family:'Share Tech Mono';font-size:.6rem;padding:3px 8px;background:rgba(255,215,0,.08);border:1px solid rgba(255,215,0,.2);border-radius:3px;color:var(--gold)">📄 Importer en .TXT pour les stats</span>`:''}
+    </div>`;
+
+    if(!hasTxtStats){
+      // JSON import — limited display
+      html+=`<div style="background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.2);border-radius:6px;padding:10px;margin-bottom:12px;font-size:.72rem;color:var(--gold)">
+        ⚠️ Import JSON : les stats (Q+/D+, armes, règles) ne sont pas disponibles dans ce format.<br>
+        <span style="color:var(--text3)">Pour une fiche complète, exporte en <strong>.TXT</strong> depuis Army Forge et réimporte.</span>
+      </div>`;
+      a.parsedUnits.forEach(u=>{
+        html+=`<div style="background:var(--deep);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:6px;display:flex;align-items:center;gap:10px;">
+          ${u.count>1?`<span style="font-family:'Share Tech Mono';font-size:.65rem;color:var(--text3);flex-shrink:0">${u.count}x</span>`:''}
+          <div style="flex:1">
+            <div style="font-family:'Orbitron';font-size:.72rem;font-weight:600;color:var(--text)">${u.name}</div>
+            ${u.joinedTo?`<div style="font-size:.62rem;color:var(--purple);margin-top:2px">↳ Rejoint à: ${u.joinedTo}</div>`:''}
+            ${u.upgrades?.length?`<div style="font-size:.6rem;color:var(--text3);margin-top:2px">${u.upgrades.length} upgrade(s) sélectionné(s)</div>`:''}
+          </div>
+          ${u.xp?`<div style="font-family:'Share Tech Mono';font-size:.62rem;color:var(--purple)">XP: ${u.xp}</div>`:''}
+        </div>`;
+      });
+    }else{
+      // TXT import — full stats display
+      // Track which units are "sub-units" (joined-to targets rendered inside hero block)
+      const renderedAsChild=new Set();
+      a.parsedUnits.forEach(u=>{
+        if(u.joinedTo)renderedAsChild.add(u.joinedTo);
+      });
+
+      a.parsedUnits.forEach(u=>{
+        // Skip units that will be rendered inside their hero's block
+        if(renderedAsChild.has(u.name)&&a.parsedUnits.some(h=>h.joinedTo===u.name))return;
+
+        const isHero=!!u.joinedTo;
+        const joinedUnit=isHero?a.parsedUnits.find(x=>x.name===u.joinedTo):null;
+
+        const renderUnitBlock=(unit,isLeader)=>`
+          <div style="background:${isLeader?'rgba(168,85,247,.07)':'var(--panel2)'};border:1px solid ${isLeader?'rgba(168,85,247,.4)':'var(--border)'};border-radius:5px;padding:9px;${isLeader?'':'margin-top:6px'}">
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px;flex-wrap:wrap">
+              ${isLeader?`<span style="font-size:.55rem;padding:1px 6px;background:rgba(168,85,247,.2);border:1px solid rgba(168,85,247,.4);border-radius:10px;color:var(--purple);font-family:'Share Tech Mono'">HÉROS</span>`:''}
+              ${unit.count>1?`<span style="font-family:'Share Tech Mono';font-size:.65rem;color:var(--text3)">${unit.count}x</span>`:''}
+              <span style="font-family:'Orbitron';font-size:.73rem;font-weight:700;color:${isLeader?'var(--purple)':'var(--text)'}">${unit.name}</span>
+              ${unit.quality?`<span style="font-family:'Share Tech Mono';font-size:.58rem;padding:1px 5px;background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.25);border-radius:3px;color:var(--glow)">${unit.quality}</span>`:''}
+              ${unit.defense?`<span style="font-family:'Share Tech Mono';font-size:.58rem;padding:1px 5px;background:rgba(255,107,53,.1);border:1px solid rgba(255,107,53,.25);border-radius:3px;color:var(--accent)">${unit.defense}</span>`:''}
+              ${unit.pts?`<span style="font-family:'Share Tech Mono';font-size:.62rem;color:var(--gold);margin-left:auto">${unit.pts}pts</span>`:''}
+            </div>
+            ${unit.rules?.length?`<div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:6px">${unit.rules.map(r=>`<span style="font-size:.57rem;padding:1px 6px;background:var(--panel);border:1px solid var(--border);border-radius:10px;color:var(--text3)">${r}</span>`).join('')}</div>`:''}
+            ${unit.weapons?.length?`<div style="border-top:1px solid var(--border);padding-top:6px;display:flex;flex-direction:column;gap:2px">${unit.weapons.map(w=>`<div style="font-size:.66rem;color:var(--text2);font-family:'Share Tech Mono'">⚔ ${w}</div>`).join('')}</div>`:''}
+          </div>`;
+
+        if(isHero&&joinedUnit){
+          // Render hero + joined unit as a combined block
+          html+=`<div style="background:var(--deep);border:2px solid rgba(168,85,247,.35);border-radius:7px;padding:10px;margin-bottom:10px;">
+            <div style="font-family:'Share Tech Mono';font-size:.58rem;color:var(--purple);letter-spacing:2px;margin-bottom:7px">⚔ FORMATION COMBINÉE</div>
+            ${renderUnitBlock(u,true)}
+            <div style="font-size:.6rem;color:var(--text3);text-align:center;margin:4px 0;font-family:'Share Tech Mono'">↓ REJOINT</div>
+            ${renderUnitBlock(joinedUnit,false)}
+            <div style="display:flex;justify-content:flex-end;margin-top:6px">
+              <span style="font-family:'Share Tech Mono';font-size:.62rem;color:var(--gold)">${(u.pts||0)+(joinedUnit.pts||0)}pts total</span>
+            </div>
+          </div>`;
+        }else{
+          html+=`<div style="background:var(--deep);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px;">${renderUnitBlock(u,false)}</div>`;
+        }
+      });
+    }
+  }else{
+    // Manual / plain text
+    html+=`<pre style="font-family:'Share Tech Mono';font-size:.68rem;color:var(--text2);white-space:pre-wrap;line-height:1.7;background:var(--deep);padding:12px;border-radius:4px;border:1px solid var(--border)">${a.units||'Aucune unité'}</pre>`;
+  }
+
+  if(a.notes)html+=`<div style="margin-top:10px;padding:10px;background:var(--deep);border:1px solid var(--border);border-radius:4px;font-size:.72rem;color:var(--text3);font-style:italic;white-space:pre-wrap">${a.notes}</div>`;
+  document.getElementById('varm-body').innerHTML=html;
+  openM('m-view-army');
+};
+
+// ════════════════════════════════════════════════════
+// UI
+// ════════════════════════════════════════════════════
+window.stab=function(id){document.querySelectorAll('.tcontent').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.stab').forEach(b=>b.classList.remove('active'));document.getElementById(id).classList.add('active');const i=['s-players','s-fleets','s-armies','s-log'].indexOf(id);document.querySelectorAll('.stab')[i].classList.add('active');};
+window.toast=function(msg){const t=document.getElementById('toast');t.innerHTML=msg;t.classList.add('on');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),3200);};
+function renderAll(){renderPlayers();renderFleets();renderArmies();renderLog();}
+
+// ════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════
+function init(){
+  loadLocal();
+  if(!S.systems||!S.systems.length)S.systems=JSON.parse(JSON.stringify(defSys));
+  // Pre-fill Firebase config if saved from previous visit
+  try{
+    const saved=JSON.parse(localStorage.getItem('opr-fbcfg')||'null');
+    if(saved){
+      document.getElementById('lob-ak').value=saved.apiKey||'';
+      document.getElementById('lob-ad').value=saved.authDomain||'';
+      document.getElementById('lob-du').value=saved.databaseURL||'';
+      document.getElementById('lob-pi').value=saved.projectId||'';
+    }
+  }catch(e){}
+  // Always show lobby first
+  document.getElementById('lobby').style.display='flex';
+  resizeGal();
+}
+window.addEventListener('resize',()=>{resizeGal();if(curSysId)resizeSys();});
+// Escape key: cancel move modes, close modals/panels
+window.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    if(sysMoveMode){exitSysMove();return;}
+    if(galMoveMode){exitGalMove();return;}
+    document.querySelectorAll('.mov.open').forEach(m=>m.classList.remove('open'));
+    if(document.getElementById('pd-ov').classList.contains('open')){closePD();return;}
+    if(document.getElementById('mission-panel').classList.contains('open')){closeMissionGen();return;}
+  }
+});
+init();
+</script>
+</body>
+</html>
