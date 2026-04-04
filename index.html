@@ -1804,13 +1804,15 @@ function renderFleets(){
     const loc=pln?pln.name:(f.systemId?'Jumpgate':'—');
     const can=isAdmin()||S.session.playerId===f.playerId;
     const moved=!!f.movedThisTurn;
+    const atGate=!f.planetId&&f.systemId; // fleet is at jumpgate
     return`<div class="fr ${selFleet?.id===f.id?'sel':''}" onclick="selF('${f.id}')">
       <div class="sdot s-${f.status}" style="${moved?'opacity:.4':''}"></div>
       <div style="flex:1">
         <div style="color:${moved?fc+'88':fc};font-size:.74rem;font-weight:600">${f.name}${moved?' <span style="font-size:.55rem;color:var(--text3)">[BOUGÉ]</span>':''}</div>
         <div style="font-size:.6rem;color:var(--text3)">${p?p.name:'?'} · ${sys?sys.name:'?'} · ${loc}</div>
       </div>
-      ${can&&!moved?`<button class="btn btn-a btn-sm btn-ic" onclick="event.stopPropagation();startMove('${f.id}')" title="Déplacer">↗</button>`:''}
+      ${can&&!moved&&atGate?`<button class="btn btn-p btn-sm btn-ic" onclick="event.stopPropagation();doGalMoveFromGate('${f.id}')" title="Naviguer vers un autre système">🌌</button>`:''}
+      ${can&&!moved&&!atGate?`<button class="btn btn-a btn-sm btn-ic" onclick="event.stopPropagation();startMove('${f.id}')" title="Déplacer dans le système">↗</button>`:''}
       ${can&&moved?`<span style="font-size:.55rem;color:var(--text3);padding:0 4px">—</span>`:''}
       ${isAdmin()?`<button class="btn btn-d btn-sm btn-ic" onclick="event.stopPropagation();removeFleet('${f.id}')">✕</button>`:''}
     </div>`;
@@ -2394,83 +2396,77 @@ window.viewArmy=function(id){
         const isHero=!!u.joinedTo;
         const joinedUnit=isHero?a.parsedUnits.find(x=>x.name===u.joinedTo):null;
 
-        // Helper: render a single unit card (leader or troop)
-        const renderCard=(unit,role)=>{
-          const isLeader=role==='leader';
-          const borderColor=isLeader?'rgba(0,255,170,.5)':'rgba(0,150,255,.35)';
-          const bg=isLeader?'rgba(0,20,10,.8)':'rgba(0,10,20,.8)';
-          const nameColor=isLeader?'var(--purple)':'var(--text)';
-          const badge=isLeader
-            ?`<span style="font-size:.55rem;padding:1px 6px;background:rgba(0,255,170,.15);border:1px solid rgba(0,255,170,.5);border-radius:2px;color:var(--purple);font-family:'Share Tech Mono';letter-spacing:1px">HÉROS</span>`
-            :`<span style="font-size:.55rem;padding:1px 6px;background:rgba(0,150,255,.12);border:1px solid rgba(0,150,255,.35);border-radius:2px;color:#60b0ff;font-family:'Share Tech Mono';letter-spacing:1px">UNITÉ</span>`;
-          return`<div style="background:${bg};border:1px solid ${borderColor};border-radius:4px;padding:10px;">
-            <!-- Header row: badge + name + pts + Q/D -->
-            <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:7px;gap:8px;flex-wrap:wrap">
-              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-                ${badge}
-                ${unit.count>1?`<span style="font-family:'Share Tech Mono';font-size:.7rem;color:var(--text3)">${unit.count}x</span>`:''}
-                <span style="font-family:'Share Tech Mono';font-size:.82rem;font-weight:700;color:${nameColor}">${unit.name}</span>
-                <span style="font-family:'Share Tech Mono';font-size:.65rem;color:var(--gold)">${unit.pts}pts</span>
-              </div>
-              <div style="display:flex;gap:4px;flex-shrink:0">
-                ${unit.quality?`<span style="font-family:'Share Tech Mono';font-size:.65rem;padding:3px 8px;background:rgba(0,150,255,.15);border:1px solid rgba(0,150,255,.45);border-radius:3px;color:#60b0ff">Qualité <strong>${unit.quality}</strong></span>`:''}
-                ${unit.defense?`<span style="font-family:'Share Tech Mono';font-size:.65rem;padding:3px 8px;background:rgba(0,180,80,.12);border:1px solid rgba(0,180,80,.4);border-radius:3px;color:#40cc80">Défense <strong>${unit.defense}</strong></span>`:''}
-              </div>
+        // Helper: weapon table for a unit
+        const weaponTable=(unit)=>{
+          if(!unit.weapons?.length)return'';
+          return`<div style="border:1px solid rgba(0,255,65,.15);border-radius:3px;padding:7px;margin-top:7px;background:rgba(0,0,0,.3)">
+            <div style="display:grid;grid-template-columns:1fr 52px 52px 36px 1fr;gap:2px;margin-bottom:4px;padding-bottom:3px;border-bottom:1px solid rgba(0,255,65,.12)">
+              <span style="font-size:.56rem;color:var(--text3);font-family:'Share Tech Mono'">ARME</span>
+              <span style="font-size:.56rem;color:var(--text3);font-family:'Share Tech Mono';text-align:center">PORT.</span>
+              <span style="font-size:.56rem;color:var(--text3);font-family:'Share Tech Mono';text-align:center">ATK</span>
+              <span style="font-size:.56rem;color:var(--text3);font-family:'Share Tech Mono';text-align:center">AP</span>
+              <span style="font-size:.56rem;color:var(--text3);font-family:'Share Tech Mono'">SPÉCIAL</span>
             </div>
-            <!-- Special rules -->
-            ${unit.rules?.length?`<div style="margin-bottom:8px;padding:5px 8px;background:rgba(0,255,65,.03);border-left:2px solid ${borderColor};font-size:.66rem;color:var(--text2);line-height:1.8">${unit.rules.map(r=>`<span style="color:var(--text)">${r}</span>`).join(' · ')}</div>`:''}
-            <!-- Weapons table -->
-            ${unit.weapons?.length?`
-            <div style="border-top:1px solid rgba(0,255,65,.1);padding-top:7px">
-              <div style="display:grid;grid-template-columns:1fr 52px 52px 36px 1fr;gap:2px;margin-bottom:3px;padding-bottom:3px;border-bottom:1px solid rgba(0,255,65,.08)">
-                <span style="font-size:.56rem;color:var(--text3);font-family:'Share Tech Mono'">ARME</span>
-                <span style="font-size:.56rem;color:var(--text3);font-family:'Share Tech Mono';text-align:center">PORT.</span>
-                <span style="font-size:.56rem;color:var(--text3);font-family:'Share Tech Mono';text-align:center">ATK</span>
-                <span style="font-size:.56rem;color:var(--text3);font-family:'Share Tech Mono';text-align:center">AP</span>
-                <span style="font-size:.56rem;color:var(--text3);font-family:'Share Tech Mono'">SPÉCIAL</span>
-              </div>
-              ${unit.weapons.map(w=>{
-                const wm=w.match(/^(.+?)\s*\(([^)]*)\)$/);
-                if(!wm)return`<div style="font-size:.65rem;color:var(--text2);font-family:'Share Tech Mono';padding:2px 0">⚔ ${w}</div>`;
-                const wname=wm[1].trim();
-                const params=wm[2].split(',').map(x=>x.trim());
-                const rng=params.find(p=>/^\d+"/.test(p))||'-';
-                const atk=params.find(p=>/^A\d/.test(p))||'-';
-                const ap=params.find(p=>/^AP\(/.test(p));
-                const apVal=ap?ap.match(/\d+/)?.[0]||'-':'-';
-                const spe=params.filter(p=>!/^\d+"/.test(p)&&!/^A\d/.test(p)&&!/^AP\(/.test(p)).join(', ')||'-';
-                return`<div style="display:grid;grid-template-columns:1fr 52px 52px 36px 1fr;gap:2px;padding:3px 0;border-bottom:1px solid rgba(0,255,65,.04)">
-                  <span style="font-size:.66rem;color:var(--text);font-family:'Share Tech Mono'">${wname}</span>
-                  <span style="font-size:.66rem;color:var(--text2);font-family:'Share Tech Mono';text-align:center">${rng}</span>
-                  <span style="font-size:.66rem;color:var(--text2);font-family:'Share Tech Mono';text-align:center">${atk}</span>
-                  <span style="font-size:.66rem;color:var(--text2);font-family:'Share Tech Mono';text-align:center">${apVal}</span>
-                  <span style="font-size:.6rem;color:var(--text3);font-family:'Share Tech Mono'">${spe}</span>
-                </div>`;
-              }).join('')}
-            </div>`:''}
+            ${unit.weapons.map(w=>{
+              const wm=w.match(/^(.+?)\s*\(([^)]*)\)$/);
+              if(!wm)return`<div style="font-size:.65rem;color:var(--text2);font-family:'Share Tech Mono';padding:2px 0">• ${w}</div>`;
+              const wname=wm[1].trim();
+              const params=wm[2].split(',').map(x=>x.trim());
+              const rng=params.find(p=>/^\d+"/.test(p))||'-';
+              const atk=params.find(p=>/^A\d/.test(p))||'-';
+              const ap=params.find(p=>/^AP\(/.test(p));
+              const apVal=ap?ap.match(/\d+/)?.[0]||'-':'-';
+              const spe=params.filter(p=>!/^\d+"/.test(p)&&!/^A\d/.test(p)&&!/^AP\(/.test(p)).join(', ')||'-';
+              return`<div style="display:grid;grid-template-columns:1fr 52px 52px 36px 1fr;gap:2px;padding:2px 0;border-bottom:1px solid rgba(0,255,65,.05)">
+                <span style="font-size:.66rem;color:var(--text);font-family:'Share Tech Mono'">${wname}</span>
+                <span style="font-size:.66rem;color:var(--text2);font-family:'Share Tech Mono';text-align:center">${rng}</span>
+                <span style="font-size:.66rem;color:var(--text2);font-family:'Share Tech Mono';text-align:center">${atk}</span>
+                <span style="font-size:.66rem;color:var(--text2);font-family:'Share Tech Mono';text-align:center">${apVal}</span>
+                <span style="font-size:.6rem;color:var(--text3);font-family:'Share Tech Mono'">${spe}</span>
+              </div>`;
+            }).join('')}
           </div>`;
         };
 
+        // Helper: unit block (leader=blue border, troop=red border, solo=green border)
+        const unitBlock=(unit,color,label)=>`
+          <div style="border:2px solid ${color};border-radius:4px;padding:9px;background:rgba(0,0,0,.25)">
+            <!-- Name row + Q/D badges -->
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:6px;flex-wrap:wrap">
+              <div style="display:flex;align-items:center;gap:6px">
+                <span style="font-size:.54rem;padding:1px 5px;border:1px solid ${color};border-radius:2px;color:${color};font-family:'Share Tech Mono'">${label}</span>
+                ${unit.count>1?`<span style="font-family:'Share Tech Mono';font-size:.68rem;color:var(--text3)">${unit.count}x</span>`:''}
+                <span style="font-family:'Share Tech Mono';font-size:.82rem;font-weight:700;color:var(--text)">${unit.name}</span>
+                <span style="font-family:'Share Tech Mono';font-size:.65rem;color:var(--gold)">${unit.pts}pts</span>
+              </div>
+              <div style="display:flex;gap:4px">
+                ${unit.quality?`<span style="font-family:'Share Tech Mono';font-size:.65rem;padding:2px 8px;border:2px solid ${color};border-radius:3px;color:var(--text);background:rgba(0,0,0,.3)"><strong>${unit.quality}</strong></span>`:''}
+                ${unit.defense?`<span style="font-family:'Share Tech Mono';font-size:.65rem;padding:2px 8px;border:2px solid ${color};border-radius:3px;color:var(--text);background:rgba(0,0,0,.3)"><strong>${unit.defense}</strong></span>`:''}
+              </div>
+            </div>
+            <!-- Rules -->
+            ${unit.rules?.length?`<div style="font-size:.64rem;color:var(--text2);line-height:1.7;margin-bottom:4px;padding:4px 6px;border-left:2px solid ${color}44">${unit.rules.map(r=>`<span style="color:var(--text)">${r}</span>`).join(' · ')}</div>`:''}
+            <!-- Weapons -->
+            ${weaponTable(unit)}
+          </div>`;
+
         if(isHero&&joinedUnit){
           renderedIds.add(joinedUnit.name);
-          // Outer frame = formation wrapper (cyan border)
-          html+=`<div style="border:2px solid rgba(0,255,170,.4);border-radius:6px;overflow:hidden;margin-bottom:10px;">
-            <!-- Formation header bar -->
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:rgba(0,255,170,.08);border-bottom:1px solid rgba(0,255,170,.3)">
-              <span style="font-family:'Share Tech Mono';font-size:.62rem;color:var(--purple);letter-spacing:1px">🔗 FORMATION</span>
-              <span style="font-family:'Share Tech Mono';font-size:.65rem;color:var(--gold)">${(u.pts||0)+(joinedUnit.pts||0)}pts</span>
+          html+=`<div style="border:2px solid #cc2222;border-radius:6px;padding:8px;margin-bottom:10px;background:rgba(10,0,0,.4)">
+            <!-- Formation label -->
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <span style="font-family:'Share Tech Mono';font-size:.6rem;color:#ff6666;letter-spacing:1px">🔗 FORMATION</span>
+              <span style="font-family:'Share Tech Mono';font-size:.62rem;color:var(--gold)">${(u.pts||0)+(joinedUnit.pts||0)}pts total</span>
             </div>
-            <!-- Hero card -->
-            <div style="padding:8px 10px;background:rgba(0,15,8,.9)">${renderCard(u,'leader')}</div>
-            <!-- Separator -->
-            <div style="display:flex;align-items:center;padding:3px 12px;background:rgba(0,255,170,.04);border-top:1px solid rgba(0,255,170,.15);border-bottom:1px solid rgba(0,150,255,.15)">
-              <span style="font-family:'Share Tech Mono';font-size:.55rem;color:var(--text3);letter-spacing:2px">↓ REJOINT</span>
-            </div>
-            <!-- Troop card -->
-            <div style="padding:8px 10px;background:rgba(0,8,15,.9)">${renderCard(joinedUnit,'troop')}</div>
+            <!-- Leader block (blue) -->
+            ${unitBlock(u,'#4488ff','LEADER')}
+            <!-- Arrow -->
+            <div style="text-align:center;padding:4px 0;font-family:'Share Tech Mono';font-size:.58rem;color:var(--text3)">↓ REJOINT</div>
+            <!-- Troop block (red) -->
+            ${unitBlock(joinedUnit,'#cc2222','TROUPE')}
           </div>`;
         }else{
-          html+=`<div style="border:1px solid var(--border2);border-radius:6px;overflow:hidden;margin-bottom:8px;padding:8px">${renderCard(u,'solo')}</div>`;
+          html+=`<div style="border:1px solid var(--border2);border-radius:6px;padding:8px;margin-bottom:8px;background:rgba(0,5,0,.3)">${unitBlock(u,'#00ff41','UNITÉ')}</div>`;
         }
       });
     }
