@@ -1318,7 +1318,17 @@ function openPlanetDetail(planetId){
   document.getElementById('pd-res').innerHTML=p?(p.resources.map(r=>`<span style="font-size:.6rem;padding:2px 6px;background:var(--deep);border:1px solid var(--border);border-radius:3px;color:var(--text2);font-family:'Share Tech Mono'">${r}</span>`).join('')):'';
   const fHere=p?S.fleets.filter(f=>f.systemId===curSysId&&f.planetId===p.id):S.fleets.filter(f=>f.systemId===curSysId&&!f.planetId);
   document.getElementById('pd-fleets').innerHTML=fHere.length?
-    `<div style="font-family:'Orbitron';font-size:.6rem;color:var(--text3);margin-bottom:5px">FLOTTES</div>${fHere.map(f=>{const pl=S.players.find(q=>q.id===f.playerId),fc=pl?pl.color:'#4a6a8a';return`<div style="display:flex;align-items:center;gap:6px;padding:5px 7px;background:var(--deep);border:1px solid ${fc}44;border-radius:4px;margin-bottom:3px;font-size:.72rem"><div style="width:7px;height:7px;border-radius:50%;background:${fc}"></div><span style="color:${fc}">${f.name}</span><button class="btn btn-a btn-sm" style="margin-left:auto;font-size:.5rem" onclick="startSysMove('${f.id}')">🚀 DÉPLACER</button></div>`;}).join('')}`:
+    `<div style="font-family:'Share Tech Mono';font-size:.6rem;color:var(--text3);margin-bottom:5px;letter-spacing:1px">FLOTTES</div>${fHere.map(f=>{
+      const pl=S.players.find(q=>q.id===f.playerId),fc=pl?pl.color:'#4a6a8a';
+      const canMove=!f.movedThisTurn&&(isAdmin()||S.session.playerId===f.playerId);
+      const atGate=!p; // we're viewing the jumpgate
+      return`<div style="display:flex;align-items:center;gap:6px;padding:5px 7px;background:var(--deep);border:1px solid ${fc}44;border-radius:4px;margin-bottom:3px;font-size:.72rem">
+        <div style="width:7px;height:7px;border-radius:50%;background:${fc}"></div>
+        <span style="color:${fc};flex:1">${f.name}${f.movedThisTurn?' <span style="font-size:.55rem;color:var(--text3)">[BOUGÉ]</span>':''}</span>
+        ${canMove&&!atGate?`<button class="btn btn-a btn-sm" style="font-size:.5rem" onclick="startSysMove('${f.id}')">🚀 DÉPLACER</button>`:''}
+        ${canMove&&atGate?`<button class="btn btn-p btn-sm" style="font-size:.5rem" onclick="doGalMoveFromGate('${f.id}')">🌌 NAVIGUER</button>`:''}
+      </div>`;
+    }).join('')}`:
     `<div style="color:var(--text3);font-size:.72rem">Aucune flotte</div>`;
   let acts='';
   if(isAdmin()||S.session.playerId){
@@ -1333,6 +1343,20 @@ function openPlanetDetail(planetId){
   document.getElementById('pd-ov').classList.add('open');
 }
 window.closePD=function(){document.getElementById('pd-ov').classList.remove('open');curPlanetId=null;};
+
+// Fleet at jumpgate wants to navigate to galaxy map
+window.doGalMoveFromGate=function(fid){
+  selFleet=S.fleets.find(f=>f.id===fid);if(!selFleet)return;
+  if(selFleet.movedThisTurn){toast('⚠️ Cette flotte a déjà bougé ce tour');return;}
+  if(selFleet.planetId!==null){toast('⚠️ La flotte doit être au Jumpgate');return;}
+  galMoveMode=true;
+  galCv.classList.add('move-mode');
+  document.getElementById('gal-mv-ban').classList.add('on');
+  closePD();
+  closeSysView();
+  renderFleets();drawGal();
+  toast('🌌 Sélectionnez un système adjacent pour naviguer');
+};
 
 window.confirmDeletePlanet=function(sid,pid){
   const sys=S.systems.find(s=>s.id===sid),p=sys?.planets.find(pl=>pl.id===pid);if(!p)return;
@@ -1554,16 +1578,30 @@ window.startSysMove=function(fid){
 };
 window.startMove=function(fid){
   selFleet=S.fleets.find(f=>f.id===fid);if(!selFleet)return;
-  if(curSysId&&selFleet.systemId===curSysId){
-    // Move within system
-    sysMoveMode=true;sysCv.classList.add('move-mode');document.getElementById('sv-mv-ban').classList.add('on');
-    closePD();renderFleets();drawSys();toast('🚀 Cliquez une destination dans le système');
+  if(selFleet.movedThisTurn){toast('⚠️ Cette flotte a déjà bougé ce tour');return;}
+
+  const inSysView=curSysId&&selFleet.systemId===curSysId;
+  const atGate=selFleet.planetId===null;
+
+  if(atGate){
+    // Fleet at jumpgate — can jump to another system
+    galMoveMode=true;
+    galCv.classList.add('move-mode');
+    document.getElementById('gal-mv-ban').classList.add('on');
+    if(curSysId)closeSysView();
+    renderFleets();drawGal();
+    toast('🚀 Sélectionnez un système adjacent pour sauter');
   }else{
-    // Inter-system move — close sys view but remember fleet's system so we can return
-    const fromSys=selFleet.systemId;
-    galMoveMode=true;galCv.classList.add('move-mode');document.getElementById('gal-mv-ban').classList.add('on');
-    closeSysView();stab('s-fleets');renderFleets();drawGal();
-    toast('🚀 Cliquez un système adjacent — ou Échap pour annuler');
+    // Fleet on a planet — can only move within the system
+    if(!inSysView){
+      // Open the system view first
+      openSysView(selFleet.systemId);
+    }
+    sysMoveMode=true;
+    sysCv.classList.add('move-mode');
+    document.getElementById('sv-mv-ban').classList.add('on');
+    closePD();renderFleets();drawSys();
+    toast('🚀 Cliquez une planète ou le Jumpgate');
   }
 };
 
@@ -1845,10 +1883,12 @@ window.openM=function(id){
   if(id==='m-add-army'){
     const opts=S.players.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
     ['na-player','na-player-txt'].forEach(sid=>{const el=document.getElementById(sid);if(el)el.innerHTML=opts;});
-    // Reset to manual tab if opening fresh
     if(!_pendingArmy)armyTab('manual');
   }
-  if(id==='m-battle'){document.getElementById('btl-win').innerHTML=S.players.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');document.getElementById('btl-los').innerHTML=`<option value="">Aucun</option>`+S.players.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');}
+  if(id==='m-battle'){
+    document.getElementById('btl-win').innerHTML=S.players.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+    document.getElementById('btl-los').innerHTML=`<option value="">Aucun</option>`+S.players.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+  }
   if(id==='m-session'){
     document.getElementById('ses-player').innerHTML=`<option value="">— Spectateur —</option>`+S.players.map(p=>`<option value="${p.id}" ${S.session.playerId===p.id?'selected':''}>${p.name}</option>`).join('');
     document.getElementById('ses-mode').value=S.session.mode;
@@ -1856,7 +1896,16 @@ window.openM=function(id){
     document.getElementById('ses-error').style.display='none';
     toggleAdminPwd(S.session.mode);
   }
-  if(id==='m-edit-sys'&&curSysId){const sys=S.systems.find(s=>s.id===curSysId);if(sys){document.getElementById('es-id').value=curSysId;document.getElementById('es-name').value=sys.name;}}  document.getElementById(id).classList.add('open');
+  if(id==='m-edit-sys'&&curSysId){
+    const sys=S.systems.find(s=>s.id===curSysId);
+    if(sys){document.getElementById('es-id').value=curSysId;document.getElementById('es-name').value=sys.name;}
+  }
+  if(id==='m-add-player'){
+    document.getElementById('np-name').value='';
+    document.getElementById('np-color').value='#00ff41';
+  }
+  const el=document.getElementById(id);
+  if(el)el.classList.add('open');
 };
 window.closeM=function(id){document.getElementById(id).classList.remove('open');};
 window.saveBattle=function(){
@@ -2185,10 +2234,11 @@ window.lobbySetPwd=function(){};
 let _pendingArmy=null;
 
 window.armyTab=function(tab){
-  ['manual','txt','json'].forEach(t=>{
-    document.getElementById('army-tab-'+t).style.display=t===tab?'block':'none';
+  ['manual','txt'].forEach(t=>{
+    const el=document.getElementById('army-tab-'+t);
+    if(el)el.style.display=t===tab?'block':'none';
     const btn=document.getElementById('at-'+t);
-    if(btn){btn.style.background=t===tab?'rgba(0,212,255,.1)':'none';btn.style.color=t===tab?'var(--glow)':'var(--text3)';}
+    if(btn){btn.style.background=t===tab?'rgba(0,255,65,.1)':'none';btn.style.color=t===tab?'var(--glow)':'var(--text3)';}
   });
   _pendingArmy=null;
 };
@@ -2347,55 +2397,54 @@ window.viewArmy=function(id){
         // Helper: render a single unit card (leader or troop)
         const renderCard=(unit,role)=>{
           const isLeader=role==='leader';
-          const isTroop=role==='troop';
-          const bgColor=isLeader?'rgba(0,255,170,.04)':'var(--deep)';
-          const borderColor=isLeader?'rgba(0,255,170,.3)':'var(--border2)';
+          const borderColor=isLeader?'rgba(0,255,170,.5)':'rgba(0,150,255,.35)';
+          const bg=isLeader?'rgba(0,20,10,.8)':'rgba(0,10,20,.8)';
           const nameColor=isLeader?'var(--purple)':'var(--text)';
-          return`<div style="background:${bgColor};border:1px solid ${borderColor};border-radius:4px;padding:11px;margin-bottom:0">
-            <!-- Unit header -->
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
-              <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
-                ${isLeader?`<span style="font-size:.58rem;padding:2px 7px;background:rgba(0,255,170,.15);border:1px solid rgba(0,255,170,.4);border-radius:2px;color:var(--purple);font-family:'Share Tech Mono';letter-spacing:1px">HÉROS</span>`:''}
+          const badge=isLeader
+            ?`<span style="font-size:.55rem;padding:1px 6px;background:rgba(0,255,170,.15);border:1px solid rgba(0,255,170,.5);border-radius:2px;color:var(--purple);font-family:'Share Tech Mono';letter-spacing:1px">HÉROS</span>`
+            :`<span style="font-size:.55rem;padding:1px 6px;background:rgba(0,150,255,.12);border:1px solid rgba(0,150,255,.35);border-radius:2px;color:#60b0ff;font-family:'Share Tech Mono';letter-spacing:1px">UNITÉ</span>`;
+          return`<div style="background:${bg};border:1px solid ${borderColor};border-radius:4px;padding:10px;">
+            <!-- Header row: badge + name + pts + Q/D -->
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:7px;gap:8px;flex-wrap:wrap">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                ${badge}
                 ${unit.count>1?`<span style="font-family:'Share Tech Mono';font-size:.7rem;color:var(--text3)">${unit.count}x</span>`:''}
-                <span style="font-family:'Share Tech Mono';font-size:.8rem;font-weight:700;color:${nameColor}">${unit.name}</span>
-                ${unit.pts?`<span style="font-family:'Share Tech Mono';font-size:.68rem;color:var(--gold)">${unit.pts}pts</span>`:''}
+                <span style="font-family:'Share Tech Mono';font-size:.82rem;font-weight:700;color:${nameColor}">${unit.name}</span>
+                <span style="font-family:'Share Tech Mono';font-size:.65rem;color:var(--gold)">${unit.pts}pts</span>
               </div>
-              <div style="display:flex;gap:5px">
-                ${unit.quality?`<span style="font-family:'Share Tech Mono';font-size:.65rem;padding:3px 8px;background:rgba(0,150,255,.15);border:1px solid rgba(0,150,255,.4);border-radius:3px;color:#60b0ff">Qualité <strong>${unit.quality}</strong></span>`:''}
-                ${unit.defense?`<span style="font-family:'Share Tech Mono';font-size:.65rem;padding:3px 8px;background:rgba(255,107,53,.12);border:1px solid rgba(255,107,53,.35);border-radius:3px;color:var(--accent)">Défense <strong>${unit.defense}</strong></span>`:''}
+              <div style="display:flex;gap:4px;flex-shrink:0">
+                ${unit.quality?`<span style="font-family:'Share Tech Mono';font-size:.65rem;padding:3px 8px;background:rgba(0,150,255,.15);border:1px solid rgba(0,150,255,.45);border-radius:3px;color:#60b0ff">Qualité <strong>${unit.quality}</strong></span>`:''}
+                ${unit.defense?`<span style="font-family:'Share Tech Mono';font-size:.65rem;padding:3px 8px;background:rgba(0,180,80,.12);border:1px solid rgba(0,180,80,.4);border-radius:3px;color:#40cc80">Défense <strong>${unit.defense}</strong></span>`:''}
               </div>
             </div>
             <!-- Special rules -->
-            ${unit.rules?.length?`<div style="margin-bottom:8px;font-size:.67rem;color:var(--text2);line-height:1.7;border-left:2px solid var(--border2);padding-left:8px">${unit.rules.map(r=>{
-              const parts=r.split(/—|-(?=\s)/,2);
-              return`<div><span style="color:var(--text)">${parts[0].trim()}</span>${parts[1]?` — <span style="color:var(--text3)">${parts[1].trim()}</span>`:''}</div>`;
-            }).join('')}</div>`:''}
+            ${unit.rules?.length?`<div style="margin-bottom:8px;padding:5px 8px;background:rgba(0,255,65,.03);border-left:2px solid ${borderColor};font-size:.66rem;color:var(--text2);line-height:1.8">${unit.rules.map(r=>`<span style="color:var(--text)">${r}</span>`).join(' · ')}</div>`:''}
             <!-- Weapons table -->
             ${unit.weapons?.length?`
-            <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:8px">
-              <div style="display:grid;grid-template-columns:1fr 60px 60px 40px 1fr;gap:2px;margin-bottom:4px">
-                <span style="font-size:.58rem;color:var(--text3);font-family:'Share Tech Mono'">ARME</span>
-                <span style="font-size:.58rem;color:var(--text3);font-family:'Share Tech Mono';text-align:center">PORT.</span>
-                <span style="font-size:.58rem;color:var(--text3);font-family:'Share Tech Mono';text-align:center">ATK</span>
-                <span style="font-size:.58rem;color:var(--text3);font-family:'Share Tech Mono';text-align:center">AP</span>
-                <span style="font-size:.58rem;color:var(--text3);font-family:'Share Tech Mono'">SPÉCIAL</span>
+            <div style="border-top:1px solid rgba(0,255,65,.1);padding-top:7px">
+              <div style="display:grid;grid-template-columns:1fr 52px 52px 36px 1fr;gap:2px;margin-bottom:3px;padding-bottom:3px;border-bottom:1px solid rgba(0,255,65,.08)">
+                <span style="font-size:.56rem;color:var(--text3);font-family:'Share Tech Mono'">ARME</span>
+                <span style="font-size:.56rem;color:var(--text3);font-family:'Share Tech Mono';text-align:center">PORT.</span>
+                <span style="font-size:.56rem;color:var(--text3);font-family:'Share Tech Mono';text-align:center">ATK</span>
+                <span style="font-size:.56rem;color:var(--text3);font-family:'Share Tech Mono';text-align:center">AP</span>
+                <span style="font-size:.56rem;color:var(--text3);font-family:'Share Tech Mono'">SPÉCIAL</span>
               </div>
               ${unit.weapons.map(w=>{
                 const wm=w.match(/^(.+?)\s*\(([^)]*)\)$/);
-                if(!wm)return`<div style="font-size:.67rem;color:var(--text2);font-family:'Share Tech Mono';padding:2px 0">⚔ ${w}</div>`;
+                if(!wm)return`<div style="font-size:.65rem;color:var(--text2);font-family:'Share Tech Mono';padding:2px 0">⚔ ${w}</div>`;
                 const wname=wm[1].trim();
                 const params=wm[2].split(',').map(x=>x.trim());
-                const rng=params.find(p=>/\d+"/.test(p))||'-';
+                const rng=params.find(p=>/^\d+"/.test(p))||'-';
                 const atk=params.find(p=>/^A\d/.test(p))||'-';
                 const ap=params.find(p=>/^AP\(/.test(p));
                 const apVal=ap?ap.match(/\d+/)?.[0]||'-':'-';
-                const spe=params.filter(p=>!(/\d+"/.test(p))&&!/^A\d/.test(p)&&!/^AP\(/.test(p)).join(', ')||'-';
-                return`<div style="display:grid;grid-template-columns:1fr 60px 60px 40px 1fr;gap:2px;padding:3px 0;border-bottom:1px solid rgba(0,255,65,.06)">
-                  <span style="font-size:.67rem;color:var(--text);font-family:'Share Tech Mono'">${wname}</span>
-                  <span style="font-size:.67rem;color:var(--text2);font-family:'Share Tech Mono';text-align:center">${rng}</span>
-                  <span style="font-size:.67rem;color:var(--text2);font-family:'Share Tech Mono';text-align:center">${atk}</span>
-                  <span style="font-size:.67rem;color:var(--text2);font-family:'Share Tech Mono';text-align:center">${apVal}</span>
-                  <span style="font-size:.62rem;color:var(--text3);font-family:'Share Tech Mono'">${spe}</span>
+                const spe=params.filter(p=>!/^\d+"/.test(p)&&!/^A\d/.test(p)&&!/^AP\(/.test(p)).join(', ')||'-';
+                return`<div style="display:grid;grid-template-columns:1fr 52px 52px 36px 1fr;gap:2px;padding:3px 0;border-bottom:1px solid rgba(0,255,65,.04)">
+                  <span style="font-size:.66rem;color:var(--text);font-family:'Share Tech Mono'">${wname}</span>
+                  <span style="font-size:.66rem;color:var(--text2);font-family:'Share Tech Mono';text-align:center">${rng}</span>
+                  <span style="font-size:.66rem;color:var(--text2);font-family:'Share Tech Mono';text-align:center">${atk}</span>
+                  <span style="font-size:.66rem;color:var(--text2);font-family:'Share Tech Mono';text-align:center">${apVal}</span>
+                  <span style="font-size:.6rem;color:var(--text3);font-family:'Share Tech Mono'">${spe}</span>
                 </div>`;
               }).join('')}
             </div>`:''}
@@ -2404,20 +2453,24 @@ window.viewArmy=function(id){
 
         if(isHero&&joinedUnit){
           renderedIds.add(joinedUnit.name);
-          html+=`<div style="background:var(--panel);border:1px solid rgba(0,255,170,.25);border-radius:6px;overflow:hidden;margin-bottom:10px;">
-            <!-- Formation header -->
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 12px;background:rgba(0,255,170,.06);border-bottom:1px solid rgba(0,255,170,.2)">
-              <span style="font-family:'Share Tech Mono';font-size:.62rem;color:var(--purple);letter-spacing:1px">🔗 FORMATION — ${u.name} rejoint ${joinedUnit.name}</span>
+          // Outer frame = formation wrapper (cyan border)
+          html+=`<div style="border:2px solid rgba(0,255,170,.4);border-radius:6px;overflow:hidden;margin-bottom:10px;">
+            <!-- Formation header bar -->
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:rgba(0,255,170,.08);border-bottom:1px solid rgba(0,255,170,.3)">
+              <span style="font-family:'Share Tech Mono';font-size:.62rem;color:var(--purple);letter-spacing:1px">🔗 FORMATION</span>
               <span style="font-family:'Share Tech Mono';font-size:.65rem;color:var(--gold)">${(u.pts||0)+(joinedUnit.pts||0)}pts</span>
             </div>
-            <!-- Hero -->
-            <div style="padding:10px">${renderCard(u,'leader')}</div>
-            <div style="height:1px;background:rgba(0,255,170,.15);margin:0 10px"></div>
-            <!-- Joined unit -->
-            <div style="padding:10px">${renderCard(joinedUnit,'troop')}</div>
+            <!-- Hero card -->
+            <div style="padding:8px 10px;background:rgba(0,15,8,.9)">${renderCard(u,'leader')}</div>
+            <!-- Separator -->
+            <div style="display:flex;align-items:center;padding:3px 12px;background:rgba(0,255,170,.04);border-top:1px solid rgba(0,255,170,.15);border-bottom:1px solid rgba(0,150,255,.15)">
+              <span style="font-family:'Share Tech Mono';font-size:.55rem;color:var(--text3);letter-spacing:2px">↓ REJOINT</span>
+            </div>
+            <!-- Troop card -->
+            <div style="padding:8px 10px;background:rgba(0,8,15,.9)">${renderCard(joinedUnit,'troop')}</div>
           </div>`;
         }else{
-          html+=`<div style="background:var(--panel);border:1px solid var(--border2);border-radius:6px;overflow:hidden;margin-bottom:8px;padding:10px">${renderCard(u,'solo')}</div>`;
+          html+=`<div style="border:1px solid var(--border2);border-radius:6px;overflow:hidden;margin-bottom:8px;padding:8px">${renderCard(u,'solo')}</div>`;
         }
       });
     }
