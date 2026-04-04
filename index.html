@@ -291,14 +291,16 @@ header{display:flex;align-items:center;justify-content:space-between;padding:7px
 <header>
   <div class="logo">OPR <span>CAMPAIGN</span> <span style="font-size:.55rem;color:var(--text3);letter-spacing:1px">v3</span></div>
   <div class="hdr-center">
-    <div class="turn-box" onclick="editTurn()" style="cursor:pointer;title='Cliquer pour modifier le tour'" title="Admin: cliquer pour modifier">
+    <div class="turn-box" onclick="editTurn()" style="cursor:pointer;" title="Admin: cliquer pour modifier">
       <div><div class="tlbl">TOUR</div>
       <div class="tnum" id="turn-num">1</div></div>
     </div>
-    <button class="btn btn-a btn-sm" onclick="nextTurn()">TOUR ▶</button>
+    <div id="turn-ready-bar" style="font-family:'Share Tech Mono';font-size:.6rem;color:var(--text3);padding:4px 8px;background:var(--panel);border:1px solid var(--border);border-radius:2px;min-width:80px;text-align:center"></div>
+    <button id="btn-next-turn" class="btn btn-a btn-sm" onclick="nextTurn()" style="display:none">▶ TOUR SUIVANT</button>
   </div>
   <div class="hdr-right">
     <div id="fb-st"><div class="fbd" id="fbd"></div><span id="fbl">LOCAL</span></div>
+    <button id="btn-end-turn" class="btn btn-g btn-sm" onclick="endMyTurn()">✓ MON TOUR</button>
     <button class="btn btn-pu btn-sm" onclick="openMissionGen()">🎲 MISSION</button>
     <button class="btn btn-p btn-sm" onclick="openFBStatus()">⚡ FIREBASE</button>
     <button class="btn btn-sm" style="border-color:var(--border2);color:var(--text2)" onclick="openM('m-session')">👤 SESSION</button>
@@ -741,7 +743,7 @@ function getPlanetImg(p,sz,cb){
 // ════════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════════
-let S={turn:1,players:[],fleets:[],armies:[],systems:[],log:[],session:{mode:'admin',playerId:null},adminPassword:''};
+let S={turn:1,players:[],fleets:[],armies:[],systems:[],log:[],nebulae:[],turnReady:{},session:{mode:'admin',playerId:null},adminPassword:''};
 let selFleet=null,galMoveMode=false,sysMoveMode=false;
 let sysDragMode=false,sysConnMode=false; // new edit modes
 let sysDragPlanet=null,sysConnFirst=null; // drag target / first planet for connection
@@ -1360,11 +1362,18 @@ window.deletePlanet=function(sid,pid){
 
 window.startConquer=function(sid,pid){
   const sys=S.systems.find(s=>s.id===sid),p=sys?.planets.find(pl=>pl.id===pid);if(!p)return;
-  if(S.session.mode==='player'&&S.session.playerId){
-    p.owner=S.session.playerId;const pl=S.players.find(q=>q.id===S.session.playerId);
+  // Check: does the conquering player have a fleet on this planet?
+  const conquerId=S.session.playerId;
+  if(conquerId){
+    const hasFleet=S.fleets.some(f=>f.playerId===conquerId&&f.systemId===sid&&f.planetId===pid);
+    if(!hasFleet){toast('⚠️ Vous devez avoir une flotte sur cette planète pour la conquérir');return;}
+  }
+  if(S.session.mode==='player'&&conquerId){
+    p.owner=conquerId;const pl=S.players.find(q=>q.id===conquerId);
     addLog(`Tour ${S.turn} — <strong style="color:${pl?.color}">${pl?.name||'?'}</strong> conquiert <strong>${p.name}</strong>!`,'v');
     saveS();renderAll();drawSys();openPlanetDetail(pid);toast('⚑ Planète conquise!');
   }else{
+    // Admin mode: show selector (admin must choose which player conquers)
     document.getElementById('pd-acts').innerHTML=`<select class="fs" id="cq-own" style="font-size:.72rem"><option value="">Neutre</option>${S.players.map(pl=>`<option value="${pl.id}" ${p.owner===pl.id?'selected':''}>${pl.name}</option>`).join('')}</select><button class="btn btn-p btn-sm" onclick="applyConquer('${sid}','${pid}')">OK</button><button class="btn btn-sm" style="border-color:var(--border);color:var(--text3)" onclick="openPlanetDetail('${pid}')">✕</button>`;
   }
 };
@@ -1447,27 +1456,95 @@ window.savePlanetEdit=function(){
 // ════════════════════════════════════════════════════
 function doGalMove(fid,nsid){
   const f=S.fleets.find(fl=>fl.id===fid);if(!f)return;
+  // Must be at jumpgate (no planetId) to make inter-system jump
+  if(f.planetId!==null){toast('⚠️ La flotte doit être au Jumpgate pour sauter vers un autre système');exitGalMove();return;}
+  // 1 move per turn
+  if(f.movedThisTurn){toast('⚠️ Cette flotte a déjà bougé ce tour');exitGalMove();return;}
   const os=S.systems.find(s=>s.id===f.systemId),ns=S.systems.find(s=>s.id===nsid);
-  f.systemId=nsid;f.planetId=null;f.status='orbit'; // arrives at gate
+  f.systemId=nsid;f.planetId=null;f.status='orbit';f.movedThisTurn=true;
   const enem=S.fleets.filter(fl=>fl.id!==fid&&fl.systemId===nsid&&fl.playerId!==f.playerId);
   if(enem.length){f.status='battle';enem.forEach(fl=>fl.status='battle');toast(`⚔️ Contact ennemi dans ${ns?.name}!`);}
-  addLog(`Tour ${S.turn} — Flotte <strong>${f.name}</strong> : ${os?.name||'?'} → <strong>${ns?.name||'?'}</strong> [Jumpgate]`);
+  addLog(`Tour ${S.turn} — Flotte <strong>${f.name}</strong> : ${os?.name||'?'} → <strong>${ns?.name||'?'}</strong> [Saut]`);
   saveS();renderAll();drawGal();
 }
-function exitGalMove(){galMoveMode=false;galCv.classList.remove('move-mode');document.getElementById('gal-mv-ban').classList.remove('on');drawGal();}
 
 function doSysMove(fid,newPlanetId){
   const f=S.fleets.find(fl=>fl.id===fid);if(!f)return;
+  // 1 move per turn
+  if(f.movedThisTurn){toast('⚠️ Cette flotte a déjà bougé ce tour');exitSysMove();return;}
   const sys=S.systems.find(s=>s.id===f.systemId);
   const oldPname=f.planetId?sys?.planets.find(p=>p.id===f.planetId)?.name:'Jumpgate';
   const newPname=newPlanetId?sys?.planets.find(p=>p.id===newPlanetId)?.name:'Jumpgate';
-  f.planetId=newPlanetId;f.status='orbit';
+  f.planetId=newPlanetId;f.status='orbit';f.movedThisTurn=true;
   const enem=S.fleets.filter(fl=>fl.id!==fid&&fl.systemId===f.systemId&&fl.planetId===newPlanetId&&fl.playerId!==f.playerId);
   if(enem.length){f.status='battle';enem.forEach(fl=>fl.status='battle');toast(`⚔️ Contact ennemi sur ${newPname}!`);}
   addLog(`Tour ${S.turn} — Flotte <strong>${f.name}</strong> : ${oldPname} → <strong>${newPname}</strong>`);
   saveS();renderAll();drawSys();
 }
+function exitGalMove(){galMoveMode=false;galCv.classList.remove('move-mode');document.getElementById('gal-mv-ban').classList.remove('on');drawGal();}
 function exitSysMove(){sysMoveMode=false;sysCv.classList.remove('move-mode');document.getElementById('sv-mv-ban').classList.remove('on');drawSys();}
+
+// ── TURN MANAGEMENT ──
+window.endMyTurn=function(){
+  const pid=S.session.playerId;
+  const mode=S.session.mode;
+  if(mode==='admin'){
+    // Admin can mark all players ready or just proceed
+    if(!confirm('Passer au tour suivant maintenant ?'))return;
+    nextTurn();return;
+  }
+  if(!pid)return toast('⚠️ Sélectionner un joueur dans SESSION');
+  if(S.turnReady[pid]){
+    // Toggle off — player wants to undo their end
+    delete S.turnReady[pid];
+    toast('↩ Tour réactivé');
+  }else{
+    S.turnReady[pid]=true;
+    toast('✅ Tour terminé — en attente des autres joueurs');
+  }
+  updateTurnBar();
+  saveS();
+  // Check if all players have ended their turn
+  const allDone=S.players.length>0&&S.players.every(p=>S.turnReady[p.id]);
+  if(allDone){
+    document.getElementById('btn-next-turn').style.display='';
+    toast('🔔 Tous les joueurs ont terminé — admin peut passer au tour suivant');
+  }else{
+    document.getElementById('btn-next-turn').style.display='none';
+  }
+};
+
+function updateTurnBar(){
+  const bar=document.getElementById('turn-ready-bar');if(!bar)return;
+  if(!S.players.length){bar.textContent='';return;}
+  const ready=S.players.filter(p=>S.turnReady[p.id]).length;
+  const total=S.players.length;
+  bar.innerHTML=`${ready}/${total} ✓`;
+  bar.style.color=ready===total?'var(--green)':'var(--text3)';
+  // Update end-turn button style for current player
+  const pid=S.session.playerId;
+  const btn=document.getElementById('btn-end-turn');
+  if(btn){
+    if(pid&&S.turnReady[pid]){btn.textContent='↩ REPRENDRE';btn.style.borderColor='var(--text3)';btn.style.color='var(--text3)';}
+    else{btn.textContent='✓ MON TOUR';btn.style.borderColor='var(--gold)';btn.style.color='var(--gold)';}
+  }
+  // Show/hide next turn button
+  const allDone=S.players.length>0&&S.players.every(p=>S.turnReady[p.id]);
+  const nb=document.getElementById('btn-next-turn');
+  if(nb)nb.style.display=(isAdmin()&&allDone)?'':'none';
+}
+
+window.nextTurn=function(){
+  if(!isAdmin())return toast('⚠️ Admin uniquement');
+  S.turn++;
+  S.turnReady={};
+  // Reset movedThisTurn for all fleets
+  S.fleets.forEach(f=>{f.movedThisTurn=false;if(f.status==='moving')f.status='orbit';});
+  document.getElementById('turn-num').textContent=S.turn;
+  document.getElementById('btn-next-turn').style.display='none';
+  addLog(`🔄 <strong>Tour ${S.turn}</strong> commence`);
+  saveS();renderAll();updateTurnBar();toast(`▶ Tour ${S.turn}`);
+};
 
 window.startSysMove=function(fid){
   selFleet=S.fleets.find(f=>f.id===fid);if(!selFleet)return;
@@ -1688,10 +1765,15 @@ function renderFleets(){
     const pln=sys?.planets.find(pl=>pl.id===f.planetId);
     const loc=pln?pln.name:(f.systemId?'Jumpgate':'—');
     const can=isAdmin()||S.session.playerId===f.playerId;
+    const moved=!!f.movedThisTurn;
     return`<div class="fr ${selFleet?.id===f.id?'sel':''}" onclick="selF('${f.id}')">
-      <div class="sdot s-${f.status}"></div>
-      <div style="flex:1"><div style="color:${fc};font-size:.74rem;font-weight:600">${f.name}</div><div style="font-size:.6rem;color:var(--text3)">${p?p.name:'?'} · ${sys?sys.name:'?'} · ${loc}</div></div>
-      ${can?`<button class="btn btn-a btn-sm btn-ic" onclick="event.stopPropagation();startMove('${f.id}')" title="Déplacer">↗</button>`:''}
+      <div class="sdot s-${f.status}" style="${moved?'opacity:.4':''}"></div>
+      <div style="flex:1">
+        <div style="color:${moved?fc+'88':fc};font-size:.74rem;font-weight:600">${f.name}${moved?' <span style="font-size:.55rem;color:var(--text3)">[BOUGÉ]</span>':''}</div>
+        <div style="font-size:.6rem;color:var(--text3)">${p?p.name:'?'} · ${sys?sys.name:'?'} · ${loc}</div>
+      </div>
+      ${can&&!moved?`<button class="btn btn-a btn-sm btn-ic" onclick="event.stopPropagation();startMove('${f.id}')" title="Déplacer">↗</button>`:''}
+      ${can&&moved?`<span style="font-size:.55rem;color:var(--text3);padding:0 4px">—</span>`:''}
       ${isAdmin()?`<button class="btn btn-d btn-sm btn-ic" onclick="event.stopPropagation();removeFleet('${f.id}')">✕</button>`:''}
     </div>`;
   }).join('');
@@ -2035,6 +2117,8 @@ async function lobEnter(id,name){
   onValue(ref(db,'campaigns/'+id),snap=>{
     const d=snap.val();
     if(d){S={...S,...d,session:S.session,adminPassword:S.adminPassword};
+      if(!S.nebulae)S.nebulae=[];
+      if(!S.turnReady)S.turnReady={};
       document.getElementById('turn-num').textContent=S.turn;
       renderAll();drawGal();if(curSysId)drawSys();}
   });
@@ -2079,7 +2163,7 @@ window.openFBStatus=function(){
 
 async function saveS(){
   if(!db||!currentCampaignId)return;
-  const data={turn:S.turn,players:S.players,fleets:S.fleets,armies:S.armies,systems:S.systems,log:S.log};
+  const data={turn:S.turn,players:S.players,fleets:S.fleets,armies:S.armies,systems:S.systems,log:S.log,nebulae:S.nebulae||[],turnReady:S.turnReady||{}};
   try{const{ref,set}=getFB();await set(ref(db,'campaigns/'+currentCampaignId),data);}
   catch(e){console.error('saveS:',e);}
 }
@@ -2118,12 +2202,11 @@ function parseTxtArmy(txt){
   const hdrLine=lines.find(l=>l.startsWith('++'));
   if(hdrLine){
     const m=hdrLine.match(/\+\+\s*(.+?)\s*\[GF\s+(\d+)pts\]/i)||hdrLine.match(/\+\+\s*(.+?)\s*\[[\w\s]*(\d+)pts\]/i);
-    if(m){name=m[1].replace(/\s*-\s*[\w\s]+\(v[\d.]+\)\s*$/, '').trim();pts=parseInt(m[2]);}
+    if(m){name=m[1].replace(/\s*-\s*[\w\s]+\(v[\d.]+\)\s*$/,'').trim();pts=parseInt(m[2]);}
   }
 
   // Parse into raw blocks separated by blank lines
-  const blocks=[];
-  let cur=[];
+  const blocks=[];let cur=[];
   for(const l of lines){
     if(!l){if(cur.length){blocks.push(cur);cur=[];}continue;}
     if(l.startsWith('++'))continue;
@@ -2131,7 +2214,7 @@ function parseTxtArmy(txt){
   }
   if(cur.length)blocks.push(cur);
 
-  // Parse each block into a unit
+  // Parse single block into unit object
   function parseBlock(bl){
     const hdr=bl[0];
     const um=hdr.match(/^(.+?)\s*\[(\d+)\]\s+Q(\d+)\+\s+D(\d+)\+\s*\|\s*(\d+)pts(?:\s*\|\s*(.*))?$/);
@@ -2139,7 +2222,8 @@ function parseTxtArmy(txt){
     const unit={
       name:um[1].trim(),count:parseInt(um[2]),
       quality:`Q${um[3]}+`,defense:`D${um[4]}+`,
-      pts:parseInt(um[5]),rules:[],weapons:[],joinedTo:null
+      pts:parseInt(um[5]),rules:[],weapons:[],
+      joinedTo:null  // name of unit this hero joins
     };
     if(um[6])unit.rules=um[6].split(',').map(r=>r.trim()).filter(Boolean);
     for(let i=1;i<bl.length;i++){
@@ -2151,17 +2235,13 @@ function parseTxtArmy(txt){
     return unit;
   }
 
-  // First pass: parse all blocks
   const rawUnits=blocks.map(parseBlock).filter(Boolean);
 
-  // Second pass: handle "Joined to" — the LEADER block is followed by its unit
-  // In Army Forge TXT, the hero appears BEFORE the unit it joins, with "| Joined to: UnitName"
-  // We keep them separate but mark the relationship clearly
+  // Build final units list — heroes get joinedToUnit reference
   for(const u of rawUnits){
     if(u.joinedTo){
-      // Find the target unit by name
       const target=rawUnits.find(x=>x.name===u.joinedTo&&x!==u);
-      if(target)u.joinedToUnit=target;
+      if(target){u.joinedToUnit=target;target.hasJoinedHero=u;}
     }
     units.push(u);
   }
@@ -2253,47 +2333,91 @@ window.viewArmy=function(id){
         </div>`;
       });
     }else{
-      // TXT import — full stats display
-      // Track which units are "sub-units" (joined-to targets rendered inside hero block)
-      const renderedAsChild=new Set();
-      a.parsedUnits.forEach(u=>{
-        if(u.joinedTo)renderedAsChild.add(u.joinedTo);
-      });
+      // TXT import — full stats display, styled like Army Forge
+      // Units joined-to a hero are rendered inside that hero's block
+      const renderedIds=new Set();
 
       a.parsedUnits.forEach(u=>{
-        // Skip units that will be rendered inside their hero's block
-        if(renderedAsChild.has(u.name)&&a.parsedUnits.some(h=>h.joinedTo===u.name))return;
+        // Skip units already rendered as part of a formation
+        if(renderedIds.has(u.name))return;
 
         const isHero=!!u.joinedTo;
         const joinedUnit=isHero?a.parsedUnits.find(x=>x.name===u.joinedTo):null;
 
-        const renderUnitBlock=(unit,isLeader)=>`
-          <div style="background:${isLeader?'rgba(168,85,247,.07)':'var(--panel2)'};border:1px solid ${isLeader?'rgba(168,85,247,.4)':'var(--border)'};border-radius:5px;padding:9px;${isLeader?'':'margin-top:6px'}">
-            <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px;flex-wrap:wrap">
-              ${isLeader?`<span style="font-size:.55rem;padding:1px 6px;background:rgba(168,85,247,.2);border:1px solid rgba(168,85,247,.4);border-radius:10px;color:var(--purple);font-family:'Share Tech Mono'">HÉROS</span>`:''}
-              ${unit.count>1?`<span style="font-family:'Share Tech Mono';font-size:.65rem;color:var(--text3)">${unit.count}x</span>`:''}
-              <span style="font-family:'Orbitron';font-size:.73rem;font-weight:700;color:${isLeader?'var(--purple)':'var(--text)'}">${unit.name}</span>
-              ${unit.quality?`<span style="font-family:'Share Tech Mono';font-size:.58rem;padding:1px 5px;background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.25);border-radius:3px;color:var(--glow)">${unit.quality}</span>`:''}
-              ${unit.defense?`<span style="font-family:'Share Tech Mono';font-size:.58rem;padding:1px 5px;background:rgba(255,107,53,.1);border:1px solid rgba(255,107,53,.25);border-radius:3px;color:var(--accent)">${unit.defense}</span>`:''}
-              ${unit.pts?`<span style="font-family:'Share Tech Mono';font-size:.62rem;color:var(--gold);margin-left:auto">${unit.pts}pts</span>`:''}
+        // Helper: render a single unit card (leader or troop)
+        const renderCard=(unit,role)=>{
+          const isLeader=role==='leader';
+          const isTroop=role==='troop';
+          const bgColor=isLeader?'rgba(0,255,170,.04)':'var(--deep)';
+          const borderColor=isLeader?'rgba(0,255,170,.3)':'var(--border2)';
+          const nameColor=isLeader?'var(--purple)':'var(--text)';
+          return`<div style="background:${bgColor};border:1px solid ${borderColor};border-radius:4px;padding:11px;margin-bottom:0">
+            <!-- Unit header -->
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+              <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+                ${isLeader?`<span style="font-size:.58rem;padding:2px 7px;background:rgba(0,255,170,.15);border:1px solid rgba(0,255,170,.4);border-radius:2px;color:var(--purple);font-family:'Share Tech Mono';letter-spacing:1px">HÉROS</span>`:''}
+                ${unit.count>1?`<span style="font-family:'Share Tech Mono';font-size:.7rem;color:var(--text3)">${unit.count}x</span>`:''}
+                <span style="font-family:'Share Tech Mono';font-size:.8rem;font-weight:700;color:${nameColor}">${unit.name}</span>
+                ${unit.pts?`<span style="font-family:'Share Tech Mono';font-size:.68rem;color:var(--gold)">${unit.pts}pts</span>`:''}
+              </div>
+              <div style="display:flex;gap:5px">
+                ${unit.quality?`<span style="font-family:'Share Tech Mono';font-size:.65rem;padding:3px 8px;background:rgba(0,150,255,.15);border:1px solid rgba(0,150,255,.4);border-radius:3px;color:#60b0ff">Qualité <strong>${unit.quality}</strong></span>`:''}
+                ${unit.defense?`<span style="font-family:'Share Tech Mono';font-size:.65rem;padding:3px 8px;background:rgba(255,107,53,.12);border:1px solid rgba(255,107,53,.35);border-radius:3px;color:var(--accent)">Défense <strong>${unit.defense}</strong></span>`:''}
+              </div>
             </div>
-            ${unit.rules?.length?`<div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:6px">${unit.rules.map(r=>`<span style="font-size:.57rem;padding:1px 6px;background:var(--panel);border:1px solid var(--border);border-radius:10px;color:var(--text3)">${r}</span>`).join('')}</div>`:''}
-            ${unit.weapons?.length?`<div style="border-top:1px solid var(--border);padding-top:6px;display:flex;flex-direction:column;gap:2px">${unit.weapons.map(w=>`<div style="font-size:.66rem;color:var(--text2);font-family:'Share Tech Mono'">⚔ ${w}</div>`).join('')}</div>`:''}
+            <!-- Special rules -->
+            ${unit.rules?.length?`<div style="margin-bottom:8px;font-size:.67rem;color:var(--text2);line-height:1.7;border-left:2px solid var(--border2);padding-left:8px">${unit.rules.map(r=>{
+              const parts=r.split(/—|-(?=\s)/,2);
+              return`<div><span style="color:var(--text)">${parts[0].trim()}</span>${parts[1]?` — <span style="color:var(--text3)">${parts[1].trim()}</span>`:''}</div>`;
+            }).join('')}</div>`:''}
+            <!-- Weapons table -->
+            ${unit.weapons?.length?`
+            <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:8px">
+              <div style="display:grid;grid-template-columns:1fr 60px 60px 40px 1fr;gap:2px;margin-bottom:4px">
+                <span style="font-size:.58rem;color:var(--text3);font-family:'Share Tech Mono'">ARME</span>
+                <span style="font-size:.58rem;color:var(--text3);font-family:'Share Tech Mono';text-align:center">PORT.</span>
+                <span style="font-size:.58rem;color:var(--text3);font-family:'Share Tech Mono';text-align:center">ATK</span>
+                <span style="font-size:.58rem;color:var(--text3);font-family:'Share Tech Mono';text-align:center">AP</span>
+                <span style="font-size:.58rem;color:var(--text3);font-family:'Share Tech Mono'">SPÉCIAL</span>
+              </div>
+              ${unit.weapons.map(w=>{
+                const wm=w.match(/^(.+?)\s*\(([^)]*)\)$/);
+                if(!wm)return`<div style="font-size:.67rem;color:var(--text2);font-family:'Share Tech Mono';padding:2px 0">⚔ ${w}</div>`;
+                const wname=wm[1].trim();
+                const params=wm[2].split(',').map(x=>x.trim());
+                const rng=params.find(p=>/\d+"/.test(p))||'-';
+                const atk=params.find(p=>/^A\d/.test(p))||'-';
+                const ap=params.find(p=>/^AP\(/.test(p));
+                const apVal=ap?ap.match(/\d+/)?.[0]||'-':'-';
+                const spe=params.filter(p=>!(/\d+"/.test(p))&&!/^A\d/.test(p)&&!/^AP\(/.test(p)).join(', ')||'-';
+                return`<div style="display:grid;grid-template-columns:1fr 60px 60px 40px 1fr;gap:2px;padding:3px 0;border-bottom:1px solid rgba(0,255,65,.06)">
+                  <span style="font-size:.67rem;color:var(--text);font-family:'Share Tech Mono'">${wname}</span>
+                  <span style="font-size:.67rem;color:var(--text2);font-family:'Share Tech Mono';text-align:center">${rng}</span>
+                  <span style="font-size:.67rem;color:var(--text2);font-family:'Share Tech Mono';text-align:center">${atk}</span>
+                  <span style="font-size:.67rem;color:var(--text2);font-family:'Share Tech Mono';text-align:center">${apVal}</span>
+                  <span style="font-size:.62rem;color:var(--text3);font-family:'Share Tech Mono'">${spe}</span>
+                </div>`;
+              }).join('')}
+            </div>`:''}
           </div>`;
+        };
 
         if(isHero&&joinedUnit){
-          // Render hero + joined unit as a combined block
-          html+=`<div style="background:var(--deep);border:2px solid rgba(168,85,247,.35);border-radius:7px;padding:10px;margin-bottom:10px;">
-            <div style="font-family:'Share Tech Mono';font-size:.58rem;color:var(--purple);letter-spacing:2px;margin-bottom:7px">⚔ FORMATION COMBINÉE</div>
-            ${renderUnitBlock(u,true)}
-            <div style="font-size:.6rem;color:var(--text3);text-align:center;margin:4px 0;font-family:'Share Tech Mono'">↓ REJOINT</div>
-            ${renderUnitBlock(joinedUnit,false)}
-            <div style="display:flex;justify-content:flex-end;margin-top:6px">
-              <span style="font-family:'Share Tech Mono';font-size:.62rem;color:var(--gold)">${(u.pts||0)+(joinedUnit.pts||0)}pts total</span>
+          renderedIds.add(joinedUnit.name);
+          html+=`<div style="background:var(--panel);border:1px solid rgba(0,255,170,.25);border-radius:6px;overflow:hidden;margin-bottom:10px;">
+            <!-- Formation header -->
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 12px;background:rgba(0,255,170,.06);border-bottom:1px solid rgba(0,255,170,.2)">
+              <span style="font-family:'Share Tech Mono';font-size:.62rem;color:var(--purple);letter-spacing:1px">🔗 FORMATION — ${u.name} rejoint ${joinedUnit.name}</span>
+              <span style="font-family:'Share Tech Mono';font-size:.65rem;color:var(--gold)">${(u.pts||0)+(joinedUnit.pts||0)}pts</span>
             </div>
+            <!-- Hero -->
+            <div style="padding:10px">${renderCard(u,'leader')}</div>
+            <div style="height:1px;background:rgba(0,255,170,.15);margin:0 10px"></div>
+            <!-- Joined unit -->
+            <div style="padding:10px">${renderCard(joinedUnit,'troop')}</div>
           </div>`;
         }else{
-          html+=`<div style="background:var(--deep);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px;">${renderUnitBlock(u,false)}</div>`;
+          html+=`<div style="background:var(--panel);border:1px solid var(--border2);border-radius:6px;overflow:hidden;margin-bottom:8px;padding:10px">${renderCard(u,'solo')}</div>`;
         }
       });
     }
@@ -2312,7 +2436,7 @@ window.viewArmy=function(id){
 // ════════════════════════════════════════════════════
 window.stab=function(id){document.querySelectorAll('.tcontent').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.stab').forEach(b=>b.classList.remove('active'));document.getElementById(id).classList.add('active');const i=['s-players','s-fleets','s-armies','s-log'].indexOf(id);document.querySelectorAll('.stab')[i].classList.add('active');};
 window.toast=function(msg){const t=document.getElementById('toast');t.innerHTML=msg;t.classList.add('on');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),3200);};
-function renderAll(){renderPlayers();renderFleets();renderArmies();renderLog();}
+function renderAll(){renderPlayers();renderFleets();renderArmies();renderLog();updateTurnBar();}
 
 // ════════════════════════════════════════════════════
 // INIT
