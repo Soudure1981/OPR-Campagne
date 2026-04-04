@@ -1345,10 +1345,19 @@ function openPlanetDetail(planetId){
 window.closePD=function(){document.getElementById('pd-ov').classList.remove('open');curPlanetId=null;};
 
 // Fleet at jumpgate wants to navigate to galaxy map
+function isAtJumpgate(fleet){
+  return !!fleet && (fleet.planetId===null || fleet.planetId===undefined || fleet.planetId==='');
+}
+
 window.doGalMoveFromGate=function(fid){
   selFleet=S.fleets.find(f=>f.id===fid);if(!selFleet)return;
   if(selFleet.movedThisTurn){toast('⚠️ Cette flotte a déjà bougé ce tour');return;}
-  if(selFleet.planetId!==null){toast('⚠️ La flotte doit être au Jumpgate');return;}
+  if(!isAtJumpgate(selFleet)){
+    console.log('Fleet not at jumpgate:', selFleet);
+    toast('⚠️ La flotte doit être au Jumpgate');
+    return;
+  }
+  selFleet.planetId=null;
   galMoveMode=true;
   galCv.classList.add('move-mode');
   document.getElementById('gal-mv-ban').classList.add('on');
@@ -1481,7 +1490,7 @@ window.savePlanetEdit=function(){
 function doGalMove(fid,nsid){
   const f=S.fleets.find(fl=>fl.id===fid);if(!f)return;
   // Must be at jumpgate (no planetId) to make inter-system jump
-  if(f.planetId!==null){toast('⚠️ La flotte doit être au Jumpgate pour sauter vers un autre système');exitGalMove();return;}
+  if(!isAtJumpgate(f)){toast('⚠️ La flotte doit être au Jumpgate pour sauter vers un autre système');exitGalMove();return;}
   // 1 move per turn
   if(f.movedThisTurn){toast('⚠️ Cette flotte a déjà bougé ce tour');exitGalMove();return;}
   const os=S.systems.find(s=>s.id===f.systemId),ns=S.systems.find(s=>s.id===nsid);
@@ -1497,10 +1506,11 @@ function doSysMove(fid,newPlanetId){
   // 1 move per turn
   if(f.movedThisTurn){toast('⚠️ Cette flotte a déjà bougé ce tour');exitSysMove();return;}
   const sys=S.systems.find(s=>s.id===f.systemId);
-  const oldPname=f.planetId?sys?.planets.find(p=>p.id===f.planetId)?.name:'Jumpgate';
-  const newPname=newPlanetId?sys?.planets.find(p=>p.id===newPlanetId)?.name:'Jumpgate';
-  f.planetId=newPlanetId;f.status='orbit';f.movedThisTurn=true;
-  const enem=S.fleets.filter(fl=>fl.id!==fid&&fl.systemId===f.systemId&&fl.planetId===newPlanetId&&fl.playerId!==f.playerId);
+  const normPlanetId=(newPlanetId===undefined||newPlanetId===null||newPlanetId==='')?null:newPlanetId;
+  const oldPname=isAtJumpgate(f)?'Jumpgate':(sys?.planets.find(p=>p.id===f.planetId)?.name||'Jumpgate');
+  const newPname=normPlanetId?sys?.planets.find(p=>p.id===normPlanetId)?.name:'Jumpgate';
+  f.planetId=normPlanetId;f.status='orbit';f.movedThisTurn=true;
+  const enem=S.fleets.filter(fl=>fl.id!==fid&&fl.systemId===f.systemId&&fl.planetId===normPlanetId&&fl.playerId!==f.playerId);
   if(enem.length){f.status='battle';enem.forEach(fl=>fl.status='battle');toast(`⚔️ Contact ennemi sur ${newPname}!`);}
   addLog(`Tour ${S.turn} — Flotte <strong>${f.name}</strong> : ${oldPname} → <strong>${newPname}</strong>`);
   saveS();renderAll();drawSys();
