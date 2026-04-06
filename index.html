@@ -1533,7 +1533,6 @@ window.endMyTurn=function(){
 };
 
 function updateTurnBar(){
-  // Normalize turnReady
   if(!S.turnReady||typeof S.turnReady!=='object')S.turnReady={};
   const bar=document.getElementById('turn-ready-bar');
   const nb=document.getElementById('btn-next-turn');
@@ -1552,18 +1551,41 @@ function updateTurnBar(){
     btn.style.color=done?'var(--text3)':'var(--gold)';
   }
   const allDone=ready===total&&total>0;
-  if(nb)nb.style.display=(isAdmin()&&allDone)?'inline-flex':'none';
+  // Auto-advance when all players done — no admin confirmation needed
+  if(allDone){
+    toast('🔔 Tous les joueurs ont terminé — passage au tour suivant !');
+    setTimeout(()=>nextTurn(),1500);
+  }
+  if(nb)nb.style.display='none'; // hide manual button since we auto-advance
 }
 
 window.nextTurn=function(){
   if(!isAdmin())return toast('⚠️ Admin uniquement');
   S.turn++;
   S.turnReady={};
-  S.fleets.forEach(f=>{f.movedThisTurn=false;f.planetId=f.planetId||null;if(f.status==='moving')f.status='orbit';});
+  // Reset movedThisTurn — set explicitly to false so Firebase stores it
+  S.fleets.forEach(f=>{
+    f.movedThisTurn=false;
+    f.planetId=f.planetId||null;
+    if(f.status==='moving')f.status='orbit';
+  });
   document.getElementById('turn-num').textContent=S.turn;
   const nb=document.getElementById('btn-next-turn');if(nb)nb.style.display='none';
   addLog(`🔄 <strong>Tour ${S.turn}</strong> commence`);
   saveS();renderAll();updateTurnBar();toast(`▶ Tour ${S.turn}`);
+};
+
+// Fleet at gate wants to move to a planet within the system
+window.startMoveFromGate=function(fid){
+  selFleet=S.fleets.find(f=>f.id===fid);if(!selFleet)return;
+  if(selFleet.movedThisTurn){toast('⚠️ Cette flotte a déjà bougé ce tour');return;}
+  // Open system view if not already open
+  if(!curSysId||curSysId!==selFleet.systemId)openSysView(selFleet.systemId);
+  sysMoveMode=true;
+  sysCv.classList.add('move-mode');
+  document.getElementById('sv-mv-ban').classList.add('on');
+  closePD();renderFleets();drawSys();
+  toast('🚀 Cliquez une planète destination');
 };
 
 window.startSysMove=function(fid){
@@ -1807,7 +1829,10 @@ function renderFleets(){
         <div style="color:${moved?fc+'88':fc};font-size:.74rem;font-weight:600">${f.name}${moved?' <span style="font-size:.55rem;color:var(--text3)">[BOUGÉ]</span>':''}</div>
         <div style="font-size:.6rem;color:var(--text3)">${p?p.name:'?'} · ${sys?sys.name:'?'} · ${loc}</div>
       </div>
-      ${can&&!moved&&atGate?`<button class="btn btn-p btn-sm btn-ic" onclick="event.stopPropagation();doGalMoveFromGate('${f.id}')" title="Naviguer vers un autre système">🌌</button>`:''}
+      ${can&&!moved&&atGate?`
+        <button class="btn btn-p btn-sm btn-ic" onclick="event.stopPropagation();doGalMoveFromGate('${f.id}')" title="Naviguer vers un autre système">🌌</button>
+        <button class="btn btn-a btn-sm btn-ic" onclick="event.stopPropagation();startMoveFromGate('${f.id}')" title="Se déplacer vers une planète">↗</button>
+      `:''}
       ${can&&!moved&&!atGate?`<button class="btn btn-a btn-sm btn-ic" onclick="event.stopPropagation();startMove('${f.id}')" title="Déplacer dans le système">↗</button>`:''}
       ${can&&moved?`<span style="font-size:.55rem;color:var(--text3);padding:0 4px">—</span>`:''}
       ${isAdmin()?`<button class="btn btn-d btn-sm btn-ic" onclick="event.stopPropagation();removeFleet('${f.id}')">✕</button>`:''}
@@ -2212,8 +2237,12 @@ window.openFBStatus=function(){
 
 async function saveS(){
   if(!db||!currentCampaignId)return;
-  // Normalize fleet planetId: ensure "" becomes null before saving
-  const fleets=S.fleets.map(f=>({...f,planetId:f.planetId||null}));
+  // Normalize fleets before saving — Firebase drops null/false if not explicit
+  const fleets=S.fleets.map(f=>({
+    ...f,
+    planetId:f.planetId||null,
+    movedThisTurn:f.movedThisTurn===true  // always boolean, never undefined
+  }));
   const data={turn:S.turn,players:S.players,fleets,armies:S.armies,systems:S.systems,log:S.log,nebulae:S.nebulae||[],turnReady:S.turnReady||{}};
   try{const{ref,set}=getFB();await set(ref(db,'campaigns/'+currentCampaignId),data);}
   catch(e){console.error('saveS:',e);}
