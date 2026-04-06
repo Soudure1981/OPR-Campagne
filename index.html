@@ -1320,11 +1320,11 @@ function openPlanetDetail(planetId){
   document.getElementById('pd-fleets').innerHTML=fHere.length?
     `<div style="font-family:'Share Tech Mono';font-size:.6rem;color:var(--text3);margin-bottom:5px;letter-spacing:1px">FLOTTES</div>${fHere.map(f=>{
       const pl=S.players.find(q=>q.id===f.playerId),fc=pl?pl.color:'#4a6a8a';
-      const canMove=!f.movedThisTurn&&(isAdmin()||S.session.playerId===f.playerId);
+      const canMove=f.movedOnTurn!==S.turn&&(isAdmin()||S.session.playerId===f.playerId);
       const atGate=!p; // we're viewing the jumpgate
       return`<div style="display:flex;align-items:center;gap:6px;padding:5px 7px;background:var(--deep);border:1px solid ${fc}44;border-radius:4px;margin-bottom:3px;font-size:.72rem">
         <div style="width:7px;height:7px;border-radius:50%;background:${fc}"></div>
-        <span style="color:${fc};flex:1">${f.name}${f.movedThisTurn?' <span style="font-size:.55rem;color:var(--text3)">[BOUGÉ]</span>':''}</span>
+        <span style="color:${fc};flex:1">${f.name}${f.movedOnTurn===S.turn?' <span style="font-size:.55rem;color:var(--text3)">[BOUGÉ]</span>':''}</span>
         ${canMove&&!atGate?`<button class="btn btn-a btn-sm" style="font-size:.5rem" onclick="startSysMove('${f.id}')">🚀 DÉPLACER</button>`:''}
         ${canMove&&atGate?`<button class="btn btn-p btn-sm" style="font-size:.5rem" onclick="doGalMoveFromGate('${f.id}')">🌌 NAVIGUER</button>`:''}
       </div>`;
@@ -1347,7 +1347,7 @@ window.closePD=function(){document.getElementById('pd-ov').classList.remove('ope
 // Fleet at jumpgate wants to navigate to galaxy map
 window.doGalMoveFromGate=function(fid){
   selFleet=S.fleets.find(f=>f.id===fid);if(!selFleet)return;
-  if(selFleet.movedThisTurn){toast('⚠️ Cette flotte a déjà bougé ce tour');return;}
+  if(selFleet.movedOnTurn===S.turn){toast('⚠️ Cette flotte a déjà bougé ce tour');return;}
   // Normalize: treat null, undefined, "" all as "at jumpgate"
   const pid=selFleet.planetId;
   const atGate=!pid||pid===''||pid===null||pid===undefined;
@@ -1483,11 +1483,10 @@ window.savePlanetEdit=function(){
 // ════════════════════════════════════════════════════
 function doGalMove(fid,nsid){
   const f=S.fleets.find(fl=>fl.id===fid);if(!f)return;
-  // Normalize planetId - Firebase may return "" instead of null
   if(f.planetId&&f.planetId!==''){toast('⚠️ La flotte doit être au Jumpgate pour sauter');exitGalMove();return;}
-  if(f.movedThisTurn){toast('⚠️ Cette flotte a déjà bougé ce tour');exitGalMove();return;}
+  if(f.movedOnTurn===S.turn){toast('⚠️ Cette flotte a déjà bougé ce tour');exitGalMove();return;}
   const os=S.systems.find(s=>s.id===f.systemId),ns=S.systems.find(s=>s.id===nsid);
-  f.systemId=nsid;f.planetId=null;f.status='orbit';f.movedThisTurn=true;
+  f.systemId=nsid;f.planetId=null;f.status='orbit';f.movedOnTurn=S.turn;
   const enem=S.fleets.filter(fl=>fl.id!==fid&&fl.systemId===nsid&&fl.playerId!==f.playerId);
   if(enem.length){f.status='battle';enem.forEach(fl=>fl.status='battle');toast(`⚔️ Contact ennemi dans ${ns?.name}!`);}
   addLog(`Tour ${S.turn} — Flotte <strong>${f.name}</strong> : ${os?.name||'?'} → <strong>${ns?.name||'?'}</strong> [Saut]`);
@@ -1496,12 +1495,11 @@ function doGalMove(fid,nsid){
 
 function doSysMove(fid,newPlanetId){
   const f=S.fleets.find(fl=>fl.id===fid);if(!f)return;
-  // 1 move per turn
-  if(f.movedThisTurn){toast('⚠️ Cette flotte a déjà bougé ce tour');exitSysMove();return;}
+  if(f.movedOnTurn===S.turn){toast('⚠️ Cette flotte a déjà bougé ce tour');exitSysMove();return;}
   const sys=S.systems.find(s=>s.id===f.systemId);
   const oldPname=f.planetId?sys?.planets.find(p=>p.id===f.planetId)?.name:'Jumpgate';
   const newPname=newPlanetId?sys?.planets.find(p=>p.id===newPlanetId)?.name:'Jumpgate';
-  f.planetId=newPlanetId;f.status='orbit';f.movedThisTurn=true;
+  f.planetId=newPlanetId;f.status='orbit';f.movedOnTurn=S.turn;
   const enem=S.fleets.filter(fl=>fl.id!==fid&&fl.systemId===f.systemId&&fl.planetId===newPlanetId&&fl.playerId!==f.playerId);
   if(enem.length){f.status='battle';enem.forEach(fl=>fl.status='battle');toast(`⚔️ Contact ennemi sur ${newPname}!`);}
   addLog(`Tour ${S.turn} — Flotte <strong>${f.name}</strong> : ${oldPname} → <strong>${newPname}</strong>`);
@@ -1565,7 +1563,7 @@ window.nextTurn=function(){
   S.turnReady={};
   // Reset movedThisTurn — set explicitly to false so Firebase stores it
   S.fleets.forEach(f=>{
-    f.movedThisTurn=false;
+    // movedOnTurn reset automatically by turn number change
     f.planetId=f.planetId||null;
     if(f.status==='moving')f.status='orbit';
   });
@@ -1578,7 +1576,7 @@ window.nextTurn=function(){
 // Fleet at gate wants to move to a planet within the system
 window.startMoveFromGate=function(fid){
   selFleet=S.fleets.find(f=>f.id===fid);if(!selFleet)return;
-  if(selFleet.movedThisTurn){toast('⚠️ Cette flotte a déjà bougé ce tour');return;}
+  if(selFleet.movedOnTurn===S.turn){toast('⚠️ Cette flotte a déjà bougé ce tour');return;}
   // Open system view if not already open
   if(!curSysId||curSysId!==selFleet.systemId)openSysView(selFleet.systemId);
   sysMoveMode=true;
@@ -1596,7 +1594,7 @@ window.startSysMove=function(fid){
 };
 window.startMove=function(fid){
   selFleet=S.fleets.find(f=>f.id===fid);if(!selFleet)return;
-  if(selFleet.movedThisTurn){toast('⚠️ Cette flotte a déjà bougé ce tour');return;}
+  if(selFleet.movedOnTurn===S.turn){toast('⚠️ Cette flotte a déjà bougé ce tour');return;}
 
   const inSysView=curSysId&&selFleet.systemId===curSysId;
   const atGate=selFleet.planetId===null;
@@ -1821,21 +1819,26 @@ function renderFleets(){
     const pln=sys?.planets.find(pl=>pl.id===f.planetId);
     const loc=pln?pln.name:(f.systemId?'Jumpgate':'—');
     const can=isAdmin()||S.session.playerId===f.playerId;
-    const moved=!!f.movedThisTurn;
-    const atGate=(!f.planetId||f.planetId==='')&&f.systemId; // fleet is at jumpgate
-    return`<div class="fr ${selFleet?.id===f.id?'sel':''}" onclick="selF('${f.id}')">
-      <div class="sdot s-${f.status}" style="${moved?'opacity:.4':''}"></div>
-      <div style="flex:1">
-        <div style="color:${moved?fc+'88':fc};font-size:.74rem;font-weight:600">${f.name}${moved?' <span style="font-size:.55rem;color:var(--text3)">[BOUGÉ]</span>':''}</div>
-        <div style="font-size:.6rem;color:var(--text3)">${p?p.name:'?'} · ${sys?sys.name:'?'} · ${loc}</div>
+    const moved=f.movedOnTurn===S.turn;
+    const atGate=(!f.planetId||f.planetId==='')&&f.systemId;
+    return`<div class="fr ${selFleet?.id===f.id?'sel':''}" onclick="selF('${f.id}')" style="flex-direction:column;align-items:stretch;gap:4px">
+      <div style="display:flex;align-items:center;gap:5px">
+        <div class="sdot s-${f.status}" style="${moved?'opacity:.4':''}"></div>
+        <div style="flex:1;min-width:0">
+          <div style="color:${moved?fc+'88':fc};font-size:.72rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.name}${moved?' <span style="font-size:.52rem;color:var(--text3)">[BOUGÉ]</span>':''}</div>
+          <div style="font-size:.58rem;color:var(--text3)">${sys?sys.name:'?'} · ${loc}</div>
+        </div>
+        ${isAdmin()?`<button class="btn btn-d btn-sm btn-ic" onclick="event.stopPropagation();removeFleet('${f.id}')" style="flex-shrink:0">✕</button>`:''}
       </div>
       ${can&&!moved&&atGate?`
-        <button class="btn btn-p btn-sm btn-ic" onclick="event.stopPropagation();doGalMoveFromGate('${f.id}')" title="Naviguer vers un autre système">🌌</button>
-        <button class="btn btn-a btn-sm btn-ic" onclick="event.stopPropagation();startMoveFromGate('${f.id}')" title="Se déplacer vers une planète">↗</button>
-      `:''}
-      ${can&&!moved&&!atGate?`<button class="btn btn-a btn-sm btn-ic" onclick="event.stopPropagation();startMove('${f.id}')" title="Déplacer dans le système">↗</button>`:''}
-      ${can&&moved?`<span style="font-size:.55rem;color:var(--text3);padding:0 4px">—</span>`:''}
-      ${isAdmin()?`<button class="btn btn-d btn-sm btn-ic" onclick="event.stopPropagation();removeFleet('${f.id}')">✕</button>`:''}
+        <div style="display:flex;gap:4px;padding-top:2px">
+          <button class="btn btn-p btn-sm" style="flex:1;font-size:.55rem;padding:3px 4px" onclick="event.stopPropagation();doGalMoveFromGate('${f.id}')">🌌 AUTRE SYSTÈME</button>
+          <button class="btn btn-a btn-sm" style="flex:1;font-size:.55rem;padding:3px 4px" onclick="event.stopPropagation();startMoveFromGate('${f.id}')">↗ PLANÈTE</button>
+        </div>`:''}
+      ${can&&!moved&&!atGate?`
+        <div style="padding-top:2px">
+          <button class="btn btn-a btn-sm" style="width:100%;font-size:.55rem;padding:3px" onclick="event.stopPropagation();startMove('${f.id}')">↗ DÉPLACER</button>
+        </div>`:''}
     </div>`;
   }).join('');
 }
@@ -2192,7 +2195,7 @@ async function lobEnter(id,name){
       if(!S.nebulae)S.nebulae=[];
       if(!S.turnReady||typeof S.turnReady!=='object')S.turnReady={};
       // Normalize all fleet planetIds - Firebase stores null as missing key
-      if(S.fleets)S.fleets=S.fleets.map(f=>({...f,planetId:f.planetId||null,movedThisTurn:!!f.movedThisTurn}));
+      if(S.fleets)S.fleets=S.fleets.map(f=>({...f,planetId:f.planetId||null}));
       document.getElementById('turn-num').textContent=S.turn;
       renderAll();drawGal();if(curSysId)drawSys();}
   });
@@ -2241,7 +2244,7 @@ async function saveS(){
   const fleets=S.fleets.map(f=>({
     ...f,
     planetId:f.planetId||null,
-    movedThisTurn:f.movedThisTurn===true  // always boolean, never undefined
+    // movedOnTurn stored as turn number - no reset needed
   }));
   const data={turn:S.turn,players:S.players,fleets,armies:S.armies,systems:S.systems,log:S.log,nebulae:S.nebulae||[],turnReady:S.turnReady||{}};
   try{const{ref,set}=getFB();await set(ref(db,'campaigns/'+currentCampaignId),data);}
